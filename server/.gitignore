@@ -1,0 +1,37 @@
+# ============================================
+# Server (Backend) .gitignore
+# ============================================
+
+# Dependencies
+node_modules/
+
+# Environment Variables
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Uploads & Temp Files
+uploads/
+tmp/
+temp/
+*.tmp
+*.temp
+
+# Test Scripts & Scratch Files
+test_*.js
+verify_*.js
+coverage/
+.nyc_output/
+
+# OS & Editor Files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
