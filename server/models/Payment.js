@@ -31,6 +31,11 @@ const paymentSchema = new mongoose.Schema(
     balanceAfter: {
       type: Number,
     },
+    importBatchId: {
+      type: String,
+      default: null,
+      index: true,
+    },
   },
   { timestamps: true }
 );

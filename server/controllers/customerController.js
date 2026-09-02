@@ -249,6 +249,32 @@ export const recordPayment = async (req, res, next) => {
       balanceAfter: customer.totalDue,
     });
 
+    // Auto-reconcile with customer's unpaid / partially paid orders (FIFO)
+    let remainingPaymentToAllocate = amount;
+    const unpaidOrders = await Order.find({
+      customer: customerId,
+      status: { $ne: 'cancelled' },
+      orderDue: { $gt: 0 },
+    }).sort({ orderDate: 1 });
+
+    for (const ord of unpaidOrders) {
+      if (remainingPaymentToAllocate <= 0) break;
+
+      const paymentForOrder = Math.min(remainingPaymentToAllocate, ord.orderDue);
+      ord.paidAmount += paymentForOrder;
+      ord.orderDue -= paymentForOrder;
+      remainingPaymentToAllocate -= paymentForOrder;
+
+      if (ord.orderDue <= 0) {
+        ord.paymentStatus = 'paid';
+        ord.orderDue = 0;
+      } else {
+        ord.paymentStatus = 'partial';
+      }
+
+      await ord.save();
+    }
+
     await createAuditLog({
       req,
       action: 'PAYMENT_RECORD',

@@ -386,12 +386,17 @@ export const executeImport = async (req, res, next) => {
     const { mapping: autoMapping, phoneColumns } = autoMapColumns(headers, dataRows);
     const mapping = customMapping || autoMapping;
 
+    // Generate unique batch ID for this import session
+    const importBatchId = `BATCH_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
     // Results tracking
     const results = {
+      importBatchId,
       totalRows: dataRows.length,
       customersCreated: 0,
       customersUpdated: 0,
       ordersCreated: 0,
+      ordersSkippedDuplicate: 0,
       paymentsCreated: 0,
       errors: [],
       skipped: 0,
@@ -518,6 +523,24 @@ export const executeImport = async (req, res, next) => {
 
         const orderDate = parseDate(parsed.date);
 
+        // Deduplication check: Avoid duplicate order creation if row was already imported
+        const startOfDay = new Date(orderDate);
+        startOfDay.setHours(0, 0, 0, 0);
+        const endOfDay = new Date(orderDate);
+        endOfDay.setHours(23, 59, 59, 999);
+
+        const existingOrder = await Order.findOne({
+          customer: customer._id,
+          orderDate: { $gte: startOfDay, $lte: endOfDay },
+          totalBill: Math.max(0, totalBill),
+          'items.productName': productName,
+        });
+
+        if (existingOrder) {
+          results.ordersSkippedDuplicate++;
+          continue;
+        }
+
         const order = await Order.create({
           customer: customer._id,
           orderDate,
@@ -538,6 +561,7 @@ export const executeImport = async (req, res, next) => {
           status: 'delivered', // Existing data = already processed
           paymentStatus:
             paidAmount <= 0 ? 'unpaid' : paidAmount >= totalBill ? 'paid' : 'partial',
+          importBatchId,
         });
 
         results.ordersCreated++;
@@ -560,6 +584,7 @@ export const executeImport = async (req, res, next) => {
             amount: paidAmount,
             method: 'cash',
             note: `Imported from Excel (Row ${rowNum})`,
+            importBatchId,
           });
           results.paymentsCreated++;
         }

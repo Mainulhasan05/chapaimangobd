@@ -105,6 +105,11 @@ const orderSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    importBatchId: {
+      type: String,
+      default: null,
+      index: true,
+    },
   },
   { timestamps: true }
 );

@@ -195,6 +195,9 @@ export const updateOrder = async (req, res, next) => {
       courierTrackingId,
       courierCharge,
       notes,
+      items,
+      discount,
+      deliveryAddress,
     } = req.body;
 
     const order = await Order.findById(req.params.id);
@@ -207,16 +210,114 @@ export const updateOrder = async (req, res, next) => {
     }
 
     const previousStatus = order.status;
+    const oldTotalBill = order.totalBill;
+    const oldOrderDue = order.orderDue;
+    const oldPaidAmount = order.paidAmount;
 
-    // Only allow updating certain fields (not items/amounts after creation)
-    if (status) order.status = status;
+    // Update non-financial fields
     if (courierName !== undefined) order.courierName = courierName;
     if (courierTrackingId !== undefined) order.courierTrackingId = courierTrackingId;
-    if (courierCharge !== undefined) order.courierCharge = courierCharge;
+    if (deliveryAddress !== undefined) order.deliveryAddress = deliveryAddress;
     if (notes !== undefined) order.notes = notes;
 
-    // Handle cancellation — reverse the balance impact
-    if (status === 'cancelled' && order.status !== 'cancelled') {
+    // Allow updating items and discount if order is not delivered/cancelled
+    if (items && Array.isArray(items) && items.length > 0) {
+      order.items = items;
+    }
+    if (discount !== undefined) {
+      order.discount = Math.max(0, parseFloat(discount) || 0);
+    }
+    if (courierCharge !== undefined) {
+      order.courierCharge = Math.max(0, parseFloat(courierCharge) || 0);
+    }
+
+    const newStatus = status || order.status;
+    order.status = newStatus;
+
+    // Save order (triggers pre('validate') hook to recompute totalBill, orderDue, paymentStatus)
+    await order.save();
+    await order.populate('customer', 'name phone address totalDue');
+
+    const customerId = order.customer._id || order.customer;
+
+    // --- Balance Reconciliation Logic ---
+    // Case 1: Order transitioned TO 'cancelled' from an active status -> Reverse balance
+    if (newStatus === 'cancelled' && previousStatus !== 'cancelled') {
+      await Customer.findByIdAndUpdate(customerId, {
+        $inc: {
+          totalPurchases: -oldTotalBill,
+          totalPaid: -oldPaidAmount,
+          totalDue: -oldOrderDue,
+          orderCount: -1,
+        },
+      });
+    }
+    // Case 2: Order restored FROM 'cancelled' back to an active status -> Re-apply balance
+    else if (previousStatus === 'cancelled' && newStatus !== 'cancelled') {
+      await Customer.findByIdAndUpdate(customerId, {
+        $inc: {
+          totalPurchases: order.totalBill,
+          totalPaid: order.paidAmount,
+          totalDue: order.orderDue,
+          orderCount: 1,
+        },
+      });
+    }
+    // Case 3: Order remains active, but totalBill or orderDue changed -> Sync delta
+    else if (newStatus !== 'cancelled' && previousStatus !== 'cancelled') {
+      const deltaTotalBill = order.totalBill - oldTotalBill;
+      const deltaOrderDue = order.orderDue - oldOrderDue;
+
+      if (deltaTotalBill !== 0 || deltaOrderDue !== 0) {
+        await Customer.findByIdAndUpdate(customerId, {
+          $inc: {
+            totalPurchases: deltaTotalBill,
+            totalDue: deltaOrderDue,
+          },
+        });
+      }
+    }
+
+    await createAuditLog({
+      req,
+      action: newStatus === 'cancelled' ? 'ORDER_CANCEL' : 'ORDER_UPDATE',
+      category: 'ORDER',
+      description: newStatus !== previousStatus 
+        ? `Order status changed from "${previousStatus}" to "${order.status}" for customer ${order.customer?.name}`
+        : `Updated order #${order._id.toString().slice(-6)} for customer ${order.customer?.name}`,
+      targetId: order._id,
+      targetType: 'Order',
+      details: {
+        previousStatus,
+        newStatus: order.status,
+        oldTotalBill,
+        newTotalBill: order.totalBill,
+        courierName: order.courierName,
+        courierTrackingId: order.courierTrackingId,
+      },
+    });
+
+    res.status(200).json({ success: true, data: order });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Delete order (with safe balance reversal)
+// @route   DELETE /api/orders/:id
+export const deleteOrder = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id);
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found',
+      });
+    }
+
+    // If order was active (not already cancelled), reverse its customer ledger balance
+    if (order.status !== 'cancelled') {
       await Customer.findByIdAndUpdate(order.customer, {
         $inc: {
           totalPurchases: -order.totalBill,
@@ -227,26 +328,30 @@ export const updateOrder = async (req, res, next) => {
       });
     }
 
-    await order.save();
-    await order.populate('customer', 'name phone address totalDue');
+    // Delete associated payments for this order
+    await Payment.deleteMany({ order: order._id });
+
+    // Delete the order
+    await Order.findByIdAndDelete(order._id);
 
     await createAuditLog({
       req,
-      action: status === 'cancelled' ? 'ORDER_CANCEL' : 'ORDER_UPDATE',
+      action: 'ORDER_DELETE',
       category: 'ORDER',
-      description: status !== previousStatus 
-        ? `Order status changed from "${previousStatus}" to "${order.status}" for customer ${order.customer?.name}`
-        : `Updated order details for customer ${order.customer?.name}`,
+      description: `Deleted order #${order._id.toString().slice(-6)} (Reversed ৳${order.totalBill.toLocaleString()} from customer balance)`,
       targetId: order._id,
       targetType: 'Order',
       details: {
-        previousStatus,
-        newStatus: order.status,
-        courierName: order.courierName,
+        totalBill: order.totalBill,
+        paidAmount: order.paidAmount,
+        orderDue: order.orderDue,
       },
     });
 
-    res.status(200).json({ success: true, data: order });
+    res.status(200).json({
+      success: true,
+      message: 'Order deleted successfully and customer balance adjusted',
+    });
   } catch (error) {
     next(error);
   }
