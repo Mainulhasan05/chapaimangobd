@@ -67,6 +67,7 @@ export const orderAPI = {
   getOne: (id) => api.get(`/orders/${id}`),
   create: (data) => api.post('/orders', data),
   update: (id, data) => api.put(`/orders/${id}`, data),
+  delete: (id) => api.delete(`/orders/${id}`),
   addPayment: (id, data) => api.post(`/orders/${id}/payment`, data),
 };
 
@@ -88,6 +89,7 @@ export const smsAPI = {
   getConfig: () => api.get('/sms/config'),
   updateConfig: (data) => api.put('/sms/config', data),
   test: (data) => api.post('/sms/test', data),
+  getBalance: () => api.get('/sms/balance'),
 };
 
 // ============================================
@@ -102,6 +104,7 @@ export const importAPI = {
     api.post('/import/execute', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
+  rollback: (batchId) => api.post(`/import/rollback/${batchId}`),
   getTemplate: () => api.get('/import/template'),
 };
 

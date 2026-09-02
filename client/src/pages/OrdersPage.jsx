@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { orderAPI, customerAPI } from '../api';
+import { orderAPI, customerAPI, smsAPI } from '../api';
 import {
   Search,
   Plus,
@@ -18,6 +18,11 @@ import {
   CreditCard,
   MapPin,
   FileText,
+  Printer,
+  Send,
+  Edit2,
+  CheckCircle2,
+  AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
@@ -47,6 +52,10 @@ const OrdersPage = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(null);
+  const [showStickerModal, setShowStickerModal] = useState(null);
+  const [showTrackingSmsModal, setShowTrackingSmsModal] = useState(null);
+  const [showEditOrderModal, setShowEditOrderModal] = useState(null);
+  const [editOrderForm, setEditOrderForm] = useState(null);
   const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'cash', note: '' });
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -120,6 +129,76 @@ const OrdersPage = () => {
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to record payment'),
   });
+
+  const deleteOrderMutation = useMutation({
+    mutationFn: (id) => orderAPI.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
+      toast.success('Order deleted and customer balance adjusted!');
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to delete order'),
+  });
+
+  const sendTrackingSmsMutation = useMutation({
+    mutationFn: (data) => smsAPI.test(data),
+    onSuccess: () => {
+      toast.success('Courier tracking SMS sent successfully via Automas!');
+      setShowTrackingSmsModal(null);
+      queryClient.invalidateQueries({ queryKey: ['sms-history'] });
+      queryClient.invalidateQueries({ queryKey: ['sms-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to send SMS'),
+  });
+
+  const editOrderMutation = useMutation({
+    mutationFn: ({ id, data }) => orderAPI.update(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
+      toast.success('Order items and balance updated successfully!');
+      setShowEditOrderModal(null);
+      setEditOrderForm(null);
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to update order'),
+  });
+
+  const handleOpenTrackingSms = (order) => {
+    const custName = order.customer?.name || 'গ্রাহক';
+    const courier = order.courierName || 'কুরিয়ার';
+    const tracking = order.courierTrackingId ? `ট্র্যাকিং/মেমো নং: ${order.courierTrackingId}` : 'বুকিং প্রক্রিয়াধীন';
+    const dueText = order.orderDue > 0 ? `, বকেয়া/COD: ৳${order.orderDue.toLocaleString()}` : ', মূল্য পরিশোধিত';
+    const defaultMsg = `প্রিয় ${custName}, আপনার আমের চালানটি ${courier} এ পাঠানো হয়েছে। ${tracking}${dueText}। ধন্যবাদ - ChapaiMango.bd`;
+
+    setShowTrackingSmsModal({
+      order,
+      phone: order.customer?.phone || '',
+      name: custName,
+      message: defaultMsg,
+    });
+  };
+
+  const handleOpenEditOrder = (order) => {
+    setShowEditOrderModal(order);
+    setEditOrderForm({
+      items: order.items?.map((it) => ({
+        productName: it.productName,
+        quantity: it.quantity,
+        rate: it.rate,
+      })) || [{ productName: '', quantity: 1, rate: '' }],
+      discount: order.discount || 0,
+      courierName: order.courierName || '',
+      courierTrackingId: order.courierTrackingId || '',
+      courierCharge: order.courierCharge || 0,
+      deliveryAddress: order.deliveryAddress || order.customer?.address || '',
+      notes: order.notes || '',
+    });
+  };
 
   const resetOrderForm = () => {
     setOrderForm({
@@ -302,7 +381,30 @@ const OrdersPage = () => {
                       </span>
                     </td>
                     <td className="orders-actions-cell">
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end' }}>
+                      <div style={{ display: 'flex', gap: 4, alignItems: 'center', justifyContent: 'flex-end' }}>
+                        <button
+                          className="btn btn-ghost btn-icon btn-sm"
+                          title="Print Crate Sticker / Slip"
+                          onClick={() => setShowStickerModal(order)}
+                          style={{ color: 'var(--accent-secondary)' }}
+                        >
+                          <Printer size={15} />
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-icon btn-sm"
+                          title="Send Courier Tracking SMS"
+                          onClick={() => handleOpenTrackingSms(order)}
+                          style={{ color: 'var(--info)' }}
+                        >
+                          <Send size={14} />
+                        </button>
+                        <button
+                          className="btn btn-ghost btn-icon btn-sm"
+                          title="Edit Order Items & Details"
+                          onClick={() => handleOpenEditOrder(order)}
+                        >
+                          <Edit2 size={14} />
+                        </button>
                         <button
                           className="btn btn-ghost btn-icon btn-sm"
                           title="View Order Details"
@@ -315,11 +417,23 @@ const OrdersPage = () => {
                             className="btn btn-primary btn-sm"
                             title="Add Payment"
                             onClick={() => setShowPaymentModal(order)}
-                            style={{ padding: '4px 10px', fontSize: '0.75rem', height: 28 }}
+                            style={{ padding: '4px 8px', fontSize: '0.75rem', height: 28 }}
                           >
                             <DollarSign size={13} /> Pay
                           </button>
                         )}
+                        <button
+                          className="btn btn-ghost btn-icon btn-sm"
+                          title="Delete Order"
+                          onClick={() => {
+                            if (window.confirm(`Are you sure you want to delete order #${order._id.slice(-6)}? This will reverse customer balances.`)) {
+                              deleteOrderMutation.mutate(order._id);
+                            }
+                          }}
+                          style={{ color: 'var(--danger)' }}
+                        >
+                          <Trash2 size={14} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -431,19 +545,40 @@ const OrdersPage = () => {
                 </div>
 
                 {/* Actions Row */}
-                <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 4, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-xs)', marginTop: 4, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
                   <button
                     className="btn btn-secondary btn-sm"
                     onClick={() => setShowDetailsModal(order)}
-                    style={{ flex: order.orderDue > 0 ? 'none' : 1, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
                   >
-                    <Eye size={14} /> Details
+                    <Eye size={13} /> Details
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setShowStickerModal(order)}
+                    style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
+                  >
+                    <Printer size={13} /> Sticker
+                  </button>
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => handleOpenTrackingSms(order)}
+                    style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
+                  >
+                    <Send size={13} /> SMS
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-sm"
+                    onClick={() => handleOpenEditOrder(order)}
+                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '4px 8px' }}
+                  >
+                    <Edit2 size={13} /> Edit
                   </button>
                   {order.orderDue > 0 && (
                     <button
                       className="btn btn-primary btn-sm"
                       onClick={() => setShowPaymentModal(order)}
-                      style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                      style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 4 }}
                     >
                       <DollarSign size={14} /> Collect Due (৳{order.orderDue?.toLocaleString()})
                     </button>
@@ -869,7 +1004,411 @@ const OrdersPage = () => {
         </div>
       )}
 
-      {/* Responsive Styles for Orders Page */}
+      {/* Printable Crate Packing Slip / Courier Sticker Modal */}
+      {showStickerModal && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: 640 }}>
+            <div className="modal-header no-print">
+              <div>
+                <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Printer size={20} style={{ color: 'var(--accent-secondary)' }} /> Crate Packing Slip / Courier Sticker
+                </h2>
+                <p className="card-subtitle">
+                  Attach this slip to mango crates for couriers (Sundarban, Steadfast, SA Paribahan, etc.)
+                </p>
+              </div>
+              <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setShowStickerModal(null)} title="Close">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ padding: 0 }}>
+              {/* The Actual Printable Slip */}
+              <div
+                id="crate-packing-slip-printable"
+                style={{
+                  background: '#ffffff',
+                  color: '#111827',
+                  padding: '24px',
+                  borderRadius: 'var(--radius-md)',
+                  border: '2px solid #000000',
+                  fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                }}
+              >
+                {/* Sticker Header */}
+                <div style={{ textAlign: 'center', borderBottom: '2px solid #111827', paddingBottom: 12, marginBottom: 16 }}>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#166534', letterSpacing: '0.5px' }}>
+                    🥭 ChapaiMango.bd
+                  </div>
+                  <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: '#4b5563', marginTop: 2 }}>
+                    Garden Fresh Mangoes • Shibganj, Chapai Nawabganj & Rajshahi
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 2 }}>
+                    Helpline: 01711-111111 • Web: chapaimango.bd
+                  </div>
+                </div>
+
+                {/* Courier & Dispatch Info Grid */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                  <div style={{ border: '1.5px solid #111827', padding: '8px 12px', borderRadius: 4, background: '#f9fafb' }}>
+                    <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase' }}>Courier Service</div>
+                    <div style={{ fontSize: '1.0625rem', fontWeight: 800, color: '#111827' }}>
+                      {showStickerModal.courierName || 'Sundarban Courier'}
+                    </div>
+                    <div style={{ fontSize: '0.8125rem', marginTop: 3 }}>
+                      Tracking/CN: <strong style={{ letterSpacing: '0.5px' }}>{showStickerModal.courierTrackingId || 'N/A'}</strong>
+                    </div>
+                  </div>
+
+                  <div style={{ border: '1.5px solid #111827', padding: '8px 12px', borderRadius: 4, background: '#f9fafb' }}>
+                    <div style={{ fontSize: '0.6875rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase' }}>Order Ref / Date</div>
+                    <div style={{ fontSize: '1.0625rem', fontWeight: 800, color: '#111827' }}>
+                      #{showStickerModal._id.toString().slice(-6).toUpperCase()}
+                    </div>
+                    <div style={{ fontSize: '0.8125rem', marginTop: 3 }}>
+                      Date: {new Date(showStickerModal.orderDate).toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Receiver Info Card */}
+                <div style={{ border: '2px solid #111827', borderRadius: 6, padding: '12px 14px', marginBottom: 14, background: '#ffffff' }}>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#111827', textTransform: 'uppercase', borderBottom: '1px solid #e5e7eb', paddingBottom: 4, marginBottom: 8 }}>
+                    📍 RECEIVER / প্রাপকের ঠিকানা
+                  </div>
+                  <div style={{ fontSize: '1.1875rem', fontWeight: 800, color: '#111827' }}>
+                    {showStickerModal.customer?.name}
+                  </div>
+                  <div style={{ fontSize: '1rem', fontWeight: 700, color: '#047857', marginTop: 4 }}>
+                    📞 {showStickerModal.customer?.phone} {showStickerModal.customer?.altPhone ? ` / ${showStickerModal.customer.altPhone}` : ''}
+                  </div>
+                  <div style={{ fontSize: '0.875rem', fontWeight: 500, color: '#374151', marginTop: 6, lineHeight: 1.4 }}>
+                    {showStickerModal.deliveryAddress || showStickerModal.customer?.address || 'N/A'}
+                  </div>
+                </div>
+
+                {/* Mango Package Varieties Table */}
+                <div style={{ border: '1.5px solid #111827', borderRadius: 4, overflow: 'hidden', marginBottom: 14 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
+                    <thead>
+                      <tr style={{ background: '#f3f4f6', borderBottom: '1.5px solid #111827', textAlign: 'left' }}>
+                        <th style={{ padding: '6px 10px', fontWeight: 700 }}>Mango Variety (আমের জাত)</th>
+                        <th style={{ padding: '6px 10px', textAlign: 'center', fontWeight: 700 }}>Crates / Quantity</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {showStickerModal.items?.map((it, idx) => (
+                        <tr key={idx} style={{ borderBottom: idx < showStickerModal.items.length - 1 ? '1px solid #e5e7eb' : 'none' }}>
+                          <td style={{ padding: '8px 10px', fontWeight: 700 }}>🥭 {it.productName}</td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 800, fontSize: '1rem' }}>{it.quantity}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {showStickerModal.notes && (
+                  <div style={{ fontSize: '0.8125rem', color: '#4b5563', marginBottom: 14, fontStyle: 'italic' }}>
+                    <strong>Note:</strong> {showStickerModal.notes}
+                  </div>
+                )}
+
+                {/* COD Due Amount Banner */}
+                {showStickerModal.orderDue > 0 ? (
+                  <div style={{
+                    border: '3px solid #dc2626',
+                    borderRadius: 6,
+                    padding: '12px',
+                    textAlign: 'center',
+                    background: '#fef2f2',
+                  }}>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: 800, color: '#dc2626', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                      ⚠️ CASH ON DELIVERY (COD) DUE TO COLLECT:
+                    </div>
+                    <div style={{ fontSize: '1.875rem', fontWeight: 900, color: '#b91c1c', margin: '4px 0' }}>
+                      ৳{showStickerModal.orderDue.toLocaleString()}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#991b1b' }}>
+                      কুরিয়ার প্রতিনিধি: অনুগ্রহ করে ডেলিভারির সময় গ্রাহকের কাছ থেকে এই টাকা গ্রহণ করুন
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{
+                    border: '3px solid #16a34a',
+                    borderRadius: 6,
+                    padding: '12px',
+                    textAlign: 'center',
+                    background: '#f0fdf4',
+                  }}>
+                    <div style={{ fontSize: '0.8125rem', fontWeight: 800, color: '#16a34a', textTransform: 'uppercase' }}>
+                      ✅ PRE-PAID IN FULL (৳0 DUE)
+                    </div>
+                    <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#15803d', margin: '2px 0' }}>
+                      NO COLLECTION
+                    </div>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 700, color: '#166534' }}>
+                      গ্রাহক সম্পূর্ণ মূল্য পরিশোধ করেছেন — কোনো টাকা আদায় করবেন না
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="modal-footer no-print">
+              <button className="btn btn-secondary" onClick={() => setShowStickerModal(null)}>Close</button>
+              <button
+                className="btn btn-primary"
+                onClick={() => window.print()}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <Printer size={16} /> Print Delivery Sticker
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 1-Click Tracking & Dispatch SMS Modal */}
+      {showTrackingSmsModal && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: 520 }}>
+            <div className="modal-header">
+              <div>
+                <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Send size={18} style={{ color: 'var(--accent-secondary)' }} /> Send Courier Tracking SMS
+                </h2>
+                <p className="card-subtitle">
+                  Dispatch delivery memo & tracking information via Automas Gateway
+                </p>
+              </div>
+              <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setShowTrackingSmsModal(null)} title="Close">
+                <X size={18} />
+              </button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+              <div style={{ padding: 'var(--space-sm) var(--space-md)', background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Recipient:</div>
+                  <div style={{ fontWeight: 600 }}>{showTrackingSmsModal.name}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Phone:</div>
+                  <div style={{ fontWeight: 600, color: 'var(--accent-secondary)' }}>{showTrackingSmsModal.phone}</div>
+                </div>
+              </div>
+
+              <div>
+                <label className="form-label">SMS Message Content</label>
+                <textarea
+                  className="form-textarea"
+                  rows={4}
+                  value={showTrackingSmsModal.message}
+                  onChange={(e) => setShowTrackingSmsModal({ ...showTrackingSmsModal, message: e.target.value })}
+                  style={{ fontSize: '0.9375rem', minHeight: 100 }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                  <span>{showTrackingSmsModal.message.length} characters</span>
+                  <span>Automas Format 8 (Unicode)</span>
+                </div>
+              </div>
+
+              <div style={{ padding: '8px 12px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                💡 <strong>Automas Gateway:</strong> Recipient receives SMS instantly from sender ID <strong>HIMEL</strong>.
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowTrackingSmsModal(null)}>Cancel</button>
+              <button
+                className="btn btn-primary"
+                onClick={() => sendTrackingSmsMutation.mutate({ phone: showTrackingSmsModal.phone, message: showTrackingSmsModal.message })}
+                disabled={sendTrackingSmsMutation.isPending || !showTrackingSmsModal.phone}
+              >
+                {sendTrackingSmsMutation.isPending && <div className="spinner" />}
+                <Send size={15} /> Send Tracking SMS Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Order Items & Courier Details Modal */}
+      {showEditOrderModal && editOrderForm && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: 640 }}>
+            <div className="modal-header">
+              <div>
+                <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Edit2 size={18} style={{ color: 'var(--accent-secondary)' }} /> Edit Order #{showEditOrderModal._id.toString().slice(-6)}
+                </h2>
+                <p className="card-subtitle">
+                  Customer: <strong>{showEditOrderModal.customer?.name}</strong> • Modifying items will safely sync customer balance
+                </p>
+              </div>
+              <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setShowEditOrderModal(null)} title="Close">
+                <X size={18} />
+              </button>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                editOrderMutation.mutate({
+                  id: showEditOrderModal._id,
+                  data: editOrderForm,
+                });
+              }}
+            >
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+                {/* Items Editor */}
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label className="form-label" style={{ margin: 0 }}>Mango Items & Crates</label>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setEditOrderForm({
+                        ...editOrderForm,
+                        items: [...editOrderForm.items, { productName: '', quantity: 1, rate: '' }],
+                      })}
+                      style={{ fontSize: '0.75rem' }}
+                    >
+                      <Plus size={14} /> Add Item
+                    </button>
+                  </div>
+
+                  {editOrderForm.items.map((item, idx) => (
+                    <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr auto', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                      <input
+                        className="form-input"
+                        placeholder="Variety (e.g. Khirsapat)"
+                        value={item.productName}
+                        onChange={(e) => {
+                          const updated = [...editOrderForm.items];
+                          updated[idx].productName = e.target.value;
+                          setEditOrderForm({ ...editOrderForm, items: updated });
+                        }}
+                        required
+                      />
+                      <input
+                        className="form-input"
+                        type="number"
+                        placeholder="Qty"
+                        min="1"
+                        value={item.quantity}
+                        onChange={(e) => {
+                          const updated = [...editOrderForm.items];
+                          updated[idx].quantity = parseInt(e.target.value) || 1;
+                          setEditOrderForm({ ...editOrderForm, items: updated });
+                        }}
+                        required
+                      />
+                      <input
+                        className="form-input"
+                        type="number"
+                        placeholder="Rate (৳)"
+                        value={item.rate}
+                        onChange={(e) => {
+                          const updated = [...editOrderForm.items];
+                          updated[idx].rate = parseFloat(e.target.value) || 0;
+                          setEditOrderForm({ ...editOrderForm, items: updated });
+                        }}
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-icon btn-sm"
+                        disabled={editOrderForm.items.length <= 1}
+                        onClick={() => {
+                          if (editOrderForm.items.length > 1) {
+                            setEditOrderForm({
+                              ...editOrderForm,
+                              items: editOrderForm.items.filter((_, i) => i !== idx),
+                            });
+                          }
+                        }}
+                      >
+                        <Trash2 size={14} style={{ color: 'var(--danger)' }} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Financial Adjustments */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
+                  <div>
+                    <label className="form-label">Discount (৳)</label>
+                    <input
+                      className="form-input"
+                      type="number"
+                      min="0"
+                      value={editOrderForm.discount}
+                      onChange={(e) => setEditOrderForm({ ...editOrderForm, discount: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Courier Charge (৳)</label>
+                    <input
+                      className="form-input"
+                      type="number"
+                      min="0"
+                      value={editOrderForm.courierCharge}
+                      onChange={(e) => setEditOrderForm({ ...editOrderForm, courierCharge: parseFloat(e.target.value) || 0 })}
+                    />
+                  </div>
+                </div>
+
+                {/* Courier Info */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-md)' }}>
+                  <div>
+                    <label className="form-label">Courier Name</label>
+                    <input
+                      className="form-input"
+                      placeholder="Sundarban / Steadfast"
+                      value={editOrderForm.courierName}
+                      onChange={(e) => setEditOrderForm({ ...editOrderForm, courierName: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="form-label">Consignment / Tracking ID</label>
+                    <input
+                      className="form-input"
+                      placeholder="Tracking / Memo #"
+                      value={editOrderForm.courierTrackingId}
+                      onChange={(e) => setEditOrderForm({ ...editOrderForm, courierTrackingId: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="form-label">Delivery Address</label>
+                  <input
+                    className="form-input"
+                    value={editOrderForm.deliveryAddress}
+                    onChange={(e) => setEditOrderForm({ ...editOrderForm, deliveryAddress: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label className="form-label">Order Notes</label>
+                  <input
+                    className="form-input"
+                    value={editOrderForm.notes}
+                    onChange={(e) => setEditOrderForm({ ...editOrderForm, notes: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowEditOrderModal(null)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={editOrderMutation.isPending}>
+                  {editOrderMutation.isPending && <div className="spinner" />}
+                  Save Changes & Reconcile
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Responsive & Print Styles for Orders Page */}
       <style>{`
         .desktop-orders-table {
           display: block;
@@ -903,6 +1442,32 @@ const OrdersPage = () => {
             display: flex !important;
             flex-direction: column;
             gap: var(--space-md);
+          }
+        }
+
+        /* Print styles for thermal & A4 crate stickers */
+        @media print {
+          body * {
+            visibility: hidden !important;
+          }
+          #crate-packing-slip-printable, #crate-packing-slip-printable * {
+            visibility: visible !important;
+          }
+          #crate-packing-slip-printable {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            margin: 0 !important;
+            padding: 15px !important;
+            background: #ffffff !important;
+            color: #000000 !important;
+            box-shadow: none !important;
+            border: 2px solid #000000 !important;
+          }
+          .no-print {
+            display: none !important;
           }
         }
       `}</style>

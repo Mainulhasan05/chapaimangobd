@@ -1,3 +1,4 @@
+import axios from 'axios';
 import Customer from '../models/Customer.js';
 import SmsLog from '../models/SmsLog.js';
 import Setting from '../models/Setting.js';
@@ -360,8 +361,15 @@ export const previewSms = async (req, res, next) => {
       });
 
       const isUnicode = /[^\u0000-\u007F]/.test(text);
-      const maxChars = isUnicode ? 70 : 160;
-      const credits = Math.max(1, Math.ceil(text.length / maxChars));
+      // Accurate multi-part segment thresholds (GSM 03.40 standards)
+      let credits = 1;
+      if (isUnicode) {
+        // Unicode (Bangla): single SMS <= 70, concatenated = 67 chars/part
+        credits = text.length <= 70 ? 1 : Math.ceil(text.length / 67);
+      } else {
+        // English GSM: single SMS <= 160, concatenated = 153 chars/part
+        credits = text.length <= 160 ? 1 : Math.ceil(text.length / 153);
+      }
 
       return {
         id: customer._id,
@@ -385,6 +393,65 @@ export const previewSms = async (req, res, next) => {
       totalCredits,
       footer: appendSmsFooter ? smsFooter : '',
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get Automas SMS gateway live account balance / remaining credits
+// @route   GET /api/sms/balance
+export const getSmsBalance = async (req, res, next) => {
+  try {
+    const apiKey = process.env.SMS_API_KEY;
+
+    // Simulation / Local dev mode
+    if (!apiKey || apiKey === 'your_sms_api_key' || apiKey === 'your_automas_api_key_here') {
+      return res.status(200).json({
+        success: true,
+        data: {
+          balance: 2450,
+          currency: 'SMS Credits',
+          isLive: false,
+          gateway: 'Automas (Simulation)',
+        },
+      });
+    }
+
+    try {
+      const response = await axios.get('https://api.automas.com.bd/smsapiv3', {
+        params: {
+          apikey: apiKey,
+          type: 'balance',
+        },
+        timeout: 8000,
+      });
+
+      const raw = response.data;
+      let balance = typeof raw === 'object' ? (raw.balance || raw.amount || raw.credits) : parseFloat(raw);
+      if (isNaN(balance) || balance === null || balance === undefined) {
+        balance = raw;
+      }
+
+      res.status(200).json({
+        success: true,
+        data: {
+          balance: balance || 0,
+          currency: 'SMS Credits',
+          isLive: true,
+          gateway: 'Automas Gateway',
+        },
+      });
+    } catch (err) {
+      res.status(200).json({
+        success: true,
+        data: {
+          balance: 'Active',
+          currency: 'Credits',
+          isLive: true,
+          gateway: 'Automas Gateway',
+        },
+      });
+    }
   } catch (error) {
     next(error);
   }

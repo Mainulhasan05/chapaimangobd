@@ -642,3 +642,50 @@ export const getTemplate = async (req, res) => {
     },
   });
 };
+
+// @desc    Rollback a mistakenly executed Excel import batch
+// @route   POST /api/import/rollback/:batchId
+export const rollbackImport = async (req, res, next) => {
+  try {
+    const { batchId } = req.params;
+    if (!batchId) {
+      return res.status(400).json({ success: false, message: 'Batch ID is required' });
+    }
+
+    const orders = await Order.find({ importBatchId: batchId });
+    if (orders.length === 0) {
+      return res.status(404).json({ success: false, message: 'No orders found for this import batch' });
+    }
+
+    // Reverse customer balance impacts
+    for (const ord of orders) {
+      await Customer.findByIdAndUpdate(ord.customer, {
+        $inc: {
+          totalPurchases: -ord.totalBill,
+          totalPaid: -ord.paidAmount,
+          totalDue: -ord.orderDue,
+          orderCount: -1,
+        },
+      });
+    }
+
+    // Delete orders and payments created in this batch
+    await Order.deleteMany({ importBatchId: batchId });
+    await Payment.deleteMany({ importBatchId: batchId });
+
+    await createAuditLog({
+      req,
+      action: 'IMPORT_ROLLBACK',
+      category: 'IMPORT',
+      description: `Rolled back import batch ${batchId}: Deleted ${orders.length} orders and reversed customer balance changes`,
+      details: { batchId, ordersCount: orders.length },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Batch ${batchId} rolled back successfully. ${orders.length} orders removed and balances reversed.`,
+    });
+  } catch (error) {
+    next(error);
+  }
+};

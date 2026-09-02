@@ -1,6 +1,6 @@
 import express from 'express';
 import multer from 'multer';
-import { previewImport, executeImport, getTemplate } from '../controllers/importController.js';
+import { previewImport, executeImport, rollbackImport, getTemplate } from '../controllers/importController.js';
 import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -32,5 +32,6 @@ router.use(protect);
 router.get('/template', getTemplate);
 router.post('/preview', upload.single('file'), previewImport);
 router.post('/execute', upload.single('file'), executeImport);
+router.post('/rollback/:batchId', rollbackImport);
 
 export default router;

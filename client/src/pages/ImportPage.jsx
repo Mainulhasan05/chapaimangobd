@@ -78,6 +78,21 @@ const ImportPage = () => {
     },
   });
 
+  const rollbackMutation = useMutation({
+    mutationFn: (batchId) => importAPI.rollback(batchId),
+    onSuccess: (res) => {
+      toast.success(res.data.message || 'Import batch rolled back successfully!');
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['orders'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['audit-logs'] });
+      resetAll();
+    },
+    onError: (err) => {
+      toast.error(err.response?.data?.message || 'Failed to rollback import batch');
+    },
+  });
+
   const handleFileChange = (selectedFile) => {
     if (!selectedFile) return;
     setFile(selectedFile);
@@ -112,10 +127,7 @@ const ImportPage = () => {
   };
 
   const handleStartImport = () => {
-    if (!file) {
-      toast.error('Please upload an Excel file first');
-      return;
-    }
+    if (!file) return;
     const formData = new FormData();
     formData.append('file', file);
     formData.append('mapping', JSON.stringify(columnMapping));
@@ -125,28 +137,26 @@ const ImportPage = () => {
   const resetAll = () => {
     setFile(null);
     setPreviewData(null);
-    setColumnMapping({});
     setImportResult(null);
-    if (fileInputRef.current) fileInputRef.current.value = '';
+    setColumnMapping({});
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   return (
     <div className="page animate-fade-in">
+      {/* Header */}
       <div className="page-header">
         <div>
           <h1 className="page-title">Excel Data Import</h1>
           <p className="page-description">
-            Import existing customers, orders, rates, and due balances directly from your spreadsheet
+            Import offline mango orders, customer contacts, courier shipping ledgers, and standing dues into the system.
           </p>
         </div>
-        {previewData && (
-          <button className="btn btn-secondary" onClick={resetAll}>
-            <RefreshCw size={16} /> Upload Another File
-          </button>
-        )}
       </div>
 
-      {/* Success Result View */}
+      {/* Import Execution Result View */}
       {importResult && (
         <div className="card animate-slide-up" style={{ marginBottom: 'var(--space-xl)', border: '1px solid var(--success)' }}>
           <div className="card-header" style={{ marginBottom: 'var(--space-md)' }}>
@@ -160,7 +170,9 @@ const ImportPage = () => {
               </div>
               <div>
                 <h3 className="card-title" style={{ color: 'var(--success)' }}>Import Completed Successfully</h3>
-                <p className="card-subtitle">{importResult.totalRows} total rows processed from your spreadsheet</p>
+                <p className="card-subtitle">
+                  {importResult.totalRows} total rows processed • Batch ID: <code style={{ color: 'var(--accent-secondary)' }}>{importResult.importBatchId}</code>
+                </p>
               </div>
             </div>
           </div>
@@ -168,7 +180,7 @@ const ImportPage = () => {
           {/* Stats Grid */}
           <div style={{
             display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
             gap: 'var(--space-md)',
             margin: 'var(--space-lg) 0'
           }}>
@@ -191,12 +203,24 @@ const ImportPage = () => {
               </div>
             </div>
             <div style={{ padding: 'var(--space-md)', background: 'var(--bg-glass)', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Duplicates Skipped</div>
+              <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-tertiary)' }}>
+                {importResult.ordersSkippedDuplicate || 0}
+              </div>
+            </div>
+            <div style={{ padding: 'var(--space-md)', background: 'var(--bg-glass)', borderRadius: 'var(--radius-md)' }}>
               <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Payments Logged</div>
               <div style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--warning)' }}>
                 {importResult.paymentsCreated}
               </div>
             </div>
           </div>
+
+          {importResult.ordersSkippedDuplicate > 0 && (
+            <div style={{ padding: '8px 12px', background: 'var(--bg-glass)', borderRadius: 'var(--radius-sm)', fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: 'var(--space-md)' }}>
+              🛡️ <strong>Deduplication protected:</strong> {importResult.ordersSkippedDuplicate} rows were already imported previously and skipped to prevent duplicate orders and balance corruption.
+            </div>
+          )}
 
           {importResult.errors && importResult.errors.length > 0 && (
             <div style={{
@@ -216,16 +240,34 @@ const ImportPage = () => {
             </div>
           )}
 
-          <div style={{ display: 'flex', gap: 'var(--space-md)', marginTop: 'var(--space-md)' }}>
-            <button className="btn btn-primary" onClick={() => navigate('/orders')}>
-              View Orders <ArrowRight size={16} />
-            </button>
-            <button className="btn btn-secondary" onClick={() => navigate('/customers')}>
-              View Customers
-            </button>
-            <button className="btn btn-ghost" onClick={resetAll}>
-              Import Another File
-            </button>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-md)', marginTop: 'var(--space-md)' }}>
+            <div style={{ display: 'flex', gap: 'var(--space-md)' }}>
+              <button className="btn btn-primary" onClick={() => navigate('/orders')}>
+                View Orders <ArrowRight size={16} />
+              </button>
+              <button className="btn btn-secondary" onClick={() => navigate('/customers')}>
+                View Customers
+              </button>
+              <button className="btn btn-ghost" onClick={resetAll}>
+                Import Another File
+              </button>
+            </div>
+
+            {importResult.importBatchId && (
+              <button
+                className="btn btn-ghost btn-sm"
+                style={{ color: 'var(--danger)', border: '1px solid var(--danger)' }}
+                onClick={() => {
+                  if (window.confirm(`Are you sure you want to rollback batch ${importResult.importBatchId}? This will delete all orders created in this batch and reverse customer balances.`)) {
+                    rollbackMutation.mutate(importResult.importBatchId);
+                  }
+                }}
+                disabled={rollbackMutation.isPending}
+              >
+                {rollbackMutation.isPending && <div className="spinner" />}
+                Rollback This Import
+              </button>
+            )}
           </div>
         </div>
       )}

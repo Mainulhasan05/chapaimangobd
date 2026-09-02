@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   X,
   Phone,
+  RefreshCw,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -68,6 +69,11 @@ const SMSPage = () => {
 
   const queryClient = useQueryClient();
 
+  const { data: balanceData, isLoading: balanceLoading, refetch: refetchBalance } = useQuery({
+    queryKey: ['sms-balance'],
+    queryFn: () => smsAPI.getBalance().then((r) => r.data.data),
+  });
+
   const { data: configData } = useQuery({
     queryKey: ['sms-config'],
     queryFn: () => smsAPI.getConfig().then((r) => r.data.data),
@@ -106,6 +112,7 @@ const SMSPage = () => {
       setShowConfirmModal(false);
       setIsReviewedChecked(false);
       queryClient.invalidateQueries({ queryKey: ['sms-history'] });
+      queryClient.invalidateQueries({ queryKey: ['sms-balance'] });
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to send SMS'),
   });
@@ -115,6 +122,7 @@ const SMSPage = () => {
     onSuccess: () => {
       toast.success('Test SMS sent successfully via Automas!');
       setShowTestModal(false);
+      queryClient.invalidateQueries({ queryKey: ['sms-balance'] });
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to send test SMS'),
   });
@@ -185,9 +193,15 @@ const SMSPage = () => {
   const footerSuffix = configData?.appendSmsFooter && configData?.smsFooter ? ` - ${configData.smsFooter}` : '';
   const fullSampleText = template + footerSuffix;
   const isUnicode = isUnicodeText(fullSampleText);
-  const maxCharsPerSms = isUnicode ? 70 : 160;
   const totalChars = template.length + (configData?.appendSmsFooter ? (footerSuffix.length) : 0);
-  const smsCount = Math.max(1, Math.ceil(totalChars / maxCharsPerSms));
+
+  // Multi-part segment calculation (UDH standards: Bangla 70/67, GSM 160/153)
+  let smsCount = 1;
+  if (isUnicode) {
+    smsCount = totalChars <= 70 ? 1 : Math.ceil(totalChars / 67);
+  } else {
+    smsCount = totalChars <= 160 ? 1 : Math.ceil(totalChars / 153);
+  }
 
   const customers = customersData?.data || [];
   const pagination = customersData?.pagination || {};
@@ -208,7 +222,7 @@ const SMSPage = () => {
         </div>
       </div>
 
-      {/* Gateway Status Banner */}
+      {/* Gateway Status & Balance Banner */}
       <div className="card" style={{
         marginBottom: 'var(--space-lg)',
         padding: 'var(--space-md) var(--space-lg)',
@@ -232,16 +246,42 @@ const SMSPage = () => {
           </div>
         </div>
 
-        <div>
-          {configData?.isConfigured ? (
-            <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <CheckCircle2 size={12} /> Connected (Live Mode)
-            </span>
-          ) : (
-            <span className="badge badge-warning" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Info size={12} /> Simulated Mode (Add API Key in .env)
-            </span>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
+          {/* Live Balance Widget */}
+          <div style={{
+            background: 'var(--bg-secondary)',
+            padding: '6px 14px',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--border)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Gateway Balance:</span>
+            <strong style={{ fontSize: '0.9375rem', color: 'var(--accent-secondary)' }}>
+              {balanceLoading ? '...' : (typeof balanceData?.balance === 'number' ? `${balanceData.balance.toLocaleString()} Credits` : balanceData?.balance || 'Active')}
+            </strong>
+            <button
+              className="btn btn-ghost btn-icon btn-sm"
+              onClick={() => refetchBalance()}
+              title="Refresh Balance"
+              style={{ width: 22, height: 22, padding: 0 }}
+            >
+              <RefreshCw size={12} className={balanceLoading ? 'spin' : ''} />
+            </button>
+          </div>
+
+          <div>
+            {configData?.isConfigured ? (
+              <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <CheckCircle2 size={12} /> Connected (Live Mode)
+              </span>
+            ) : (
+              <span className="badge badge-warning" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Info size={12} /> Simulated Mode
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
