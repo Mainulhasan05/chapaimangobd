@@ -5,8 +5,9 @@
 # Dependencies
 node_modules/
 
-# Production Build Artifacts
-dist/
+# Production Build Artifacts (Whitelisted for auto-deployment)
+!dist/
+!dist/**
 dist-ssr/
 build/
 out/

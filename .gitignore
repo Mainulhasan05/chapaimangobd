@@ -18,8 +18,8 @@ package-lock.json.bak
 !**/.env.example
 
 # Build Outputs & Bundles
-dist/
-**/dist/
+!client/dist/
+!client/dist/**
 dist-ssr/
 **/dist-ssr/
 build/
