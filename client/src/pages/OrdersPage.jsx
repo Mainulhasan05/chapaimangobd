@@ -145,7 +145,7 @@ const OrdersPage = () => {
   const sendTrackingSmsMutation = useMutation({
     mutationFn: (data) => smsAPI.test(data),
     onSuccess: () => {
-      toast.success('Courier tracking SMS sent successfully via Automas!');
+      toast.success('Courier tracking SMS sent successfully!');
       setShowTrackingSmsModal(null);
       queryClient.invalidateQueries({ queryKey: ['sms-history'] });
       queryClient.invalidateQueries({ queryKey: ['sms-balance'] });
@@ -1178,7 +1178,7 @@ const OrdersPage = () => {
                   <Send size={18} style={{ color: 'var(--accent-secondary)' }} /> Send Courier Tracking SMS
                 </h2>
                 <p className="card-subtitle">
-                  Dispatch delivery memo & tracking information via Automas Gateway
+                  Dispatch delivery memo & tracking information via SMS
                 </p>
               </div>
               <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setShowTrackingSmsModal(null)} title="Close">
@@ -1208,12 +1208,12 @@ const OrdersPage = () => {
                 />
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                   <span>{showTrackingSmsModal.message.length} characters</span>
-                  <span>Automas Format 8 (Unicode)</span>
+                  <span>Unicode / GSM Supported</span>
                 </div>
               </div>
 
               <div style={{ padding: '8px 12px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                💡 <strong>Automas Gateway:</strong> Recipient receives SMS instantly from sender ID <strong>HIMEL</strong>.
+                💡 Recipient receives SMS instantly from your configured brand sender ID.
               </div>
             </div>
             <div className="modal-footer">

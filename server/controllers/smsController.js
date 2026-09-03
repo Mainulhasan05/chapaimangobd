@@ -21,6 +21,23 @@ const appendFooterIfConfigured = (text, footer = 'ChapaiMango.bd', append = true
   return `${text.trim()}${separator}${cleanFooter}`;
 };
 
+// Calculate SMS token credits according to GSM and Unicode standards
+export const calculateSmsCredits = (text) => {
+  if (!text) return { charCount: 0, credits: 0, isUnicode: false };
+  const clean = text.toString();
+  const charCount = clean.length;
+  const isUnicode = /[^\u0000-\u007F]/.test(clean);
+  let credits = 1;
+  if (isUnicode) {
+    // Unicode: <= 70 chars is 1 SMS, then 67 chars per part
+    credits = charCount <= 70 ? 1 : Math.ceil(charCount / 67);
+  } else {
+    // ASCII/GSM: <= 160 chars is 1 SMS, then 153 chars per part
+    credits = charCount <= 160 ? 1 : Math.ceil(charCount / 153);
+  }
+  return { charCount, credits, isUnicode };
+};
+
 // Single Source of Truth for generating exact rendered SMS text
 export const buildFinalSmsText = ({ template, customer, smsFooter = 'ChapaiMango.bd', appendSmsFooter = true }) => {
   const data = {
@@ -57,10 +74,11 @@ export const sendBulkSms = async (req, res, next) => {
       });
     }
 
-    // Fetch dynamic SMS footer settings
-    const [smsFooter, appendSmsFooter] = await Promise.all([
+    // Fetch dynamic SMS footer and sender settings
+    const [smsFooter, appendSmsFooter, customSenderId] = await Promise.all([
       Setting.get('smsFooter', 'ChapaiMango.bd'),
       Setting.get('appendSmsFooter', true),
+      Setting.get('smsSenderId', process.env.SMS_SENDER_ID || '8809617639998'),
     ]);
 
     // Fetch selected customers
@@ -75,6 +93,7 @@ export const sendBulkSms = async (req, res, next) => {
 
     const recipients = [];
     const smsItems = [];
+    let calculatedTotalCredits = 0;
 
     for (const customer of customers) {
       // Use the exact same helper to guarantee preview matches delivery 100%
@@ -84,6 +103,9 @@ export const sendBulkSms = async (req, res, next) => {
         smsFooter,
         appendSmsFooter,
       });
+
+      const stats = calculateSmsCredits(resolvedText);
+      calculatedTotalCredits += stats.credits;
 
       recipients.push({
         customer: customer._id,
@@ -96,6 +118,9 @@ export const sendBulkSms = async (req, res, next) => {
         phone: customer.phone,
         name: customer.name,
         text: resolvedText,
+        charCount: stats.charCount,
+        credits: stats.credits,
+        isUnicode: stats.isUnicode,
       });
     }
 
@@ -106,14 +131,20 @@ export const sendBulkSms = async (req, res, next) => {
     let totalFailed = 0;
     const resolvedTexts = [];
 
-    sendResults.forEach((r) => {
+    sendResults.forEach((r, idx) => {
       if (r.status === 'sent') totalSent++;
       else totalFailed++;
 
+      const item = smsItems[idx] || {};
       resolvedTexts.push({
+        name: item.name || '',
         phone: r.phone,
         text: r.text,
+        charCount: item.charCount || r.text.length,
+        credits: item.credits || calculateSmsCredits(r.text).credits,
+        isUnicode: item.isUnicode !== undefined ? item.isUnicode : calculateSmsCredits(r.text).isUnicode,
         status: r.status,
+        error: r.error,
       });
     });
 
@@ -122,11 +153,13 @@ export const sendBulkSms = async (req, res, next) => {
     if (totalFailed === customers.length) status = 'failed';
     else if (totalFailed > 0) status = 'partial';
 
-    // Log the SMS batch
+    // Log the SMS batch with exact content and token cost
     const smsLog = await SmsLog.create({
       recipients,
       template,
       resolvedTexts,
+      totalCredits: calculatedTotalCredits,
+      senderId: customSenderId || process.env.SMS_SENDER_ID || '8809617639998',
       totalSent,
       totalFailed,
       status,
@@ -177,9 +210,10 @@ export const sendTestSms = async (req, res, next) => {
       });
     }
 
-    const [smsFooter, appendSmsFooter] = await Promise.all([
+    const [smsFooter, appendSmsFooter, customSenderId] = await Promise.all([
       Setting.get('smsFooter', 'ChapaiMango.bd'),
       Setting.get('appendSmsFooter', true),
+      Setting.get('smsSenderId', process.env.SMS_SENDER_ID || '8809617639998'),
     ]);
 
     const finalMessage = appendFooterIfConfigured(message, smsFooter, appendSmsFooter);
@@ -202,18 +236,47 @@ export const sendTestSms = async (req, res, next) => {
       });
     }
 
+    const stats = calculateSmsCredits(finalMessage);
+
+    // Also persist single / test SMS in SmsLog so history is completely comprehensive
+    const testLog = await SmsLog.create({
+      recipients: [{ phone, name: 'Direct / Test Recipient' }],
+      template: message,
+      resolvedTexts: [
+        {
+          name: 'Direct / Test Recipient',
+          phone,
+          text: finalMessage,
+          charCount: stats.charCount,
+          credits: stats.credits,
+          isUnicode: stats.isUnicode,
+          status: 'sent',
+        },
+      ],
+      totalCredits: stats.credits,
+      senderId: customSenderId || process.env.SMS_SENDER_ID || '8809617639998',
+      totalSent: 1,
+      totalFailed: 0,
+      status: 'sent',
+    });
+
     await createAuditLog({
       req,
       action: 'SMS_TEST',
       category: 'SMS',
       description: `Dispatched test SMS to ${phone} via Automas gateway`,
-      details: { phone, message: finalMessage },
+      details: { phone, message: finalMessage, credits: stats.credits },
     });
 
     res.status(200).json({
       success: true,
       message: 'Test SMS sent successfully!',
-      data: result,
+      data: {
+        result,
+        smsLog: testLog,
+        credits: stats.credits,
+        charCount: stats.charCount,
+      },
     });
   } catch (error) {
     next(error);
@@ -239,8 +302,7 @@ export const getSmsConfig = async (req, res, next) => {
     res.status(200).json({
       success: true,
       data: {
-        gateway: 'Automas SMS Gateway',
-        gatewayUrl: process.env.SMS_API_URL || 'https://api.automas.com.bd/smsapiv3',
+        gateway: 'SMS Gateway',
         senderId: customSenderId || process.env.SMS_SENDER_ID || '8809617639998',
         isConfigured,
         hasApiKey: Boolean(process.env.SMS_API_KEY),
@@ -315,9 +377,40 @@ export const getSmsHistory = async (req, res, next) => {
       SmsLog.countDocuments(),
     ]);
 
+    // Enrich logs with recipient names, token costs, and character counts
+    const enrichedLogs = logs.map((log) => {
+      const logObj = log.toObject ? log.toObject() : { ...log };
+      const defaultSenderId = logObj.senderId || process.env.SMS_SENDER_ID || '8809617639998';
+
+      const resolvedTexts = (logObj.resolvedTexts || []).map((r, idx) => {
+        const messageText = r.text || logObj.template || '';
+        const stats = calculateSmsCredits(messageText);
+        const recipientMeta = logObj.recipients?.[idx] || {};
+        return {
+          name: r.name || recipientMeta.name || 'Customer',
+          phone: r.phone || recipientMeta.phone || '',
+          text: messageText,
+          status: r.status || 'sent',
+          charCount: stats.charCount,
+          credits: stats.credits,
+          isUnicode: stats.isUnicode,
+          error: r.error,
+        };
+      });
+
+      const totalCredits = resolvedTexts.reduce((sum, r) => sum + (r.credits || 1), 0) || 1;
+
+      return {
+        ...logObj,
+        senderId: defaultSenderId,
+        resolvedTexts,
+        totalCredits,
+      };
+    });
+
     res.status(200).json({
       success: true,
-      data: logs,
+      data: enrichedLogs,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -412,10 +505,13 @@ export const getSmsBalance = async (req, res, next) => {
           balance: 2450,
           currency: 'SMS Credits',
           isLive: false,
-          gateway: 'Automas (Simulation)',
+          gateway: 'SMS Gateway (Simulation)',
         },
       });
     }
+
+    let parsedBalance = null;
+    let isLive = true;
 
     try {
       const response = await axios.get('https://api.automas.com.bd/smsapiv3', {
@@ -427,31 +523,51 @@ export const getSmsBalance = async (req, res, next) => {
       });
 
       const raw = response.data;
-      let balance = typeof raw === 'object' ? (raw.balance || raw.amount || raw.credits) : parseFloat(raw);
-      if (isNaN(balance) || balance === null || balance === undefined) {
-        balance = raw;
+      if (raw !== undefined && raw !== null) {
+        if (typeof raw === 'number') {
+          parsedBalance = raw;
+        } else if (typeof raw === 'string') {
+          const num = parseFloat(raw);
+          parsedBalance = !isNaN(num) ? num : raw.trim();
+        } else if (typeof raw === 'object') {
+          // If gateway returns { response: "xxxx.xx" } or { response: 50 }
+          if (typeof raw.response === 'number') {
+            parsedBalance = raw.response;
+          } else if (typeof raw.response === 'string') {
+            const num = parseFloat(raw.response);
+            parsedBalance = !isNaN(num) ? num : raw.response.trim();
+          } else if (raw.balance !== undefined && !isNaN(parseFloat(raw.balance))) {
+            parsedBalance = parseFloat(raw.balance);
+          } else if (raw.amount !== undefined && !isNaN(parseFloat(raw.amount))) {
+            parsedBalance = parseFloat(raw.amount);
+          } else if (raw.credits !== undefined && !isNaN(parseFloat(raw.credits))) {
+            parsedBalance = parseFloat(raw.credits);
+          }
+          // Note: If raw.response is an array or status object (e.g. [{status: 105}]),
+          // parsedBalance stays null so an Object is NEVER passed to the frontend!
+        }
       }
-
-      res.status(200).json({
-        success: true,
-        data: {
-          balance: balance || 0,
-          currency: 'SMS Credits',
-          isLive: true,
-          gateway: 'Automas Gateway',
-        },
-      });
     } catch (err) {
-      res.status(200).json({
-        success: true,
-        data: {
-          balance: 'Active',
-          currency: 'Credits',
-          isLive: true,
-          gateway: 'Automas Gateway',
-        },
-      });
+      console.warn('[SMS BALANCE] Gateway balance check notice:', err.message);
     }
+
+    // Determine clean, primitive balance for UI (guaranteed never an Object)
+    const finalBalance =
+      typeof parsedBalance === 'number'
+        ? parsedBalance
+        : typeof parsedBalance === 'string' && parsedBalance.length > 0
+        ? parsedBalance
+        : 'Active';
+
+    res.status(200).json({
+      success: true,
+      data: {
+        balance: finalBalance,
+        currency: typeof finalBalance === 'number' ? 'SMS Credits' : 'Credits',
+        isLive,
+        gateway: 'SMS Gateway',
+      },
+    });
   } catch (error) {
     next(error);
   }

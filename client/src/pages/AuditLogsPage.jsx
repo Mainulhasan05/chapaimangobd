@@ -205,7 +205,7 @@ const AuditLogsPage = () => {
           <div className="stat-info">
             <span className="stat-label">SMS & Communications</span>
             <span className="stat-value">{stats.categories?.SMS?.toLocaleString() || 0}</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>Automas gateway dispatches</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>SMS gateway dispatches</span>
           </div>
         </div>
       </div>

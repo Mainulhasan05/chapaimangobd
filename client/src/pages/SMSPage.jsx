@@ -19,6 +19,10 @@ import {
   X,
   Phone,
   RefreshCw,
+  Copy,
+  Check,
+  Users,
+  Coins,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -52,6 +56,32 @@ const sampleTemplates = [
 
 const isUnicodeText = (str) => /[^\u0000-\u007F]/.test(str || '');
 
+const formatBalance = (data, isLoading) => {
+  if (isLoading) return '...';
+  if (!data) return 'Active';
+  const val = data.balance;
+  if (typeof val === 'number') {
+    return `${val.toLocaleString()} Credits`;
+  }
+  if (typeof val === 'string' && val.trim()) {
+    const num = parseFloat(val);
+    if (!isNaN(num) && /^-?\d+(\.\d+)?$/.test(val.trim())) {
+      return `${num.toLocaleString()} Credits`;
+    }
+    return val;
+  }
+  if (typeof val === 'object' && val !== null) {
+    if (typeof val.response === 'number') {
+      return `${val.response.toLocaleString()} Credits`;
+    }
+    if (typeof val.response === 'string' && !isNaN(parseFloat(val.response))) {
+      return `${parseFloat(val.response).toLocaleString()} Credits`;
+    }
+    return 'Active';
+  }
+  return 'Active';
+};
+
 const SMSPage = () => {
   const [template, setTemplate] = useState(sampleTemplates[0].text);
   const [selectedCustomers, setSelectedCustomers] = useState([]);
@@ -61,11 +91,22 @@ const SMSPage = () => {
   const [activeTab, setActiveTab] = useState('compose');
   const [showTestModal, setShowTestModal] = useState(false);
   const [testPhone, setTestPhone] = useState('');
-  const [testMessage, setTestMessage] = useState('This is a test message from Chapai Mango (chapaimango.bd) via Automas SMS Gateway.');
+  const [testMessage, setTestMessage] = useState('This is a test message from Chapai Mango (chapaimango.bd).');
 
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [confirmData, setConfirmData] = useState(null);
   const [isReviewedChecked, setIsReviewedChecked] = useState(false);
+
+  const [selectedLogDetails, setSelectedLogDetails] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
+
+  const handleCopyMessage = (text, id) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedId(id);
+    toast.success('Message copied to clipboard!');
+    setTimeout(() => setCopiedId(null), 2000);
+  };
 
   const queryClient = useQueryClient();
 
@@ -105,7 +146,7 @@ const SMSPage = () => {
   const sendMutation = useMutation({
     mutationFn: (data) => smsAPI.send(data),
     onSuccess: (res) => {
-      const summary = res.data.data.summary;
+      const summary = res.data?.data?.summary || { sent: 0, failed: 0 };
       toast.success(`SMS dispatched successfully! ${summary.sent} delivered, ${summary.failed} failed`);
       setSelectedCustomers([]);
       setPreviewData(null);
@@ -120,8 +161,9 @@ const SMSPage = () => {
   const testMutation = useMutation({
     mutationFn: (data) => smsAPI.test(data),
     onSuccess: () => {
-      toast.success('Test SMS sent successfully via Automas!');
+      toast.success('Test SMS sent successfully!');
       setShowTestModal(false);
+      queryClient.invalidateQueries({ queryKey: ['sms-history'] });
       queryClient.invalidateQueries({ queryKey: ['sms-balance'] });
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to send test SMS'),
@@ -212,7 +254,7 @@ const SMSPage = () => {
         <div>
           <h1 className="page-title">SMS Center</h1>
           <p className="page-description">
-            Powered by <strong>Automas SMS Gateway</strong> (sms.automas.com.bd) • Suffix: <strong>{configData?.smsFooter || 'ChapaiMango.bd'}</strong>
+            Broadcast transactional updates, courier tracking & due notifications • Brand Suffix: <strong>{configData?.smsFooter || 'ChapaiMango.bd'}</strong>
           </p>
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
@@ -238,10 +280,10 @@ const SMSPage = () => {
           <Radio size={20} style={{ color: 'var(--accent-secondary)' }} />
           <div>
             <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>
-              Gateway: {configData?.gateway || 'Automas SMS Gateway'}
+              SMS Gateway
             </div>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-              Endpoint: {configData?.gatewayUrl || 'https://api.automas.com.bd/smsapiv3'} • Sender ID: <strong>{configData?.senderId || 'HIMEL'}</strong>
+              Status: Connected • Sender ID: <strong>{configData?.senderId || '8809617639998'}</strong>
             </div>
           </div>
         </div>
@@ -259,7 +301,7 @@ const SMSPage = () => {
           }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Gateway Balance:</span>
             <strong style={{ fontSize: '0.9375rem', color: 'var(--accent-secondary)' }}>
-              {balanceLoading ? '...' : (typeof balanceData?.balance === 'number' ? `${balanceData.balance.toLocaleString()} Credits` : balanceData?.balance || 'Active')}
+              {formatBalance(balanceData, balanceLoading)}
             </strong>
             <button
               className="btn btn-ghost btn-icon btn-sm"
@@ -385,7 +427,7 @@ const SMSPage = () => {
             </div>
 
             {/* Preview */}
-            {previewData && (
+            {Array.isArray(previewData) && previewData.length > 0 && (
               <div className="card">
                 <div className="card-header">
                   <h3 className="card-title">Live Preview</h3>
@@ -515,15 +557,30 @@ const SMSPage = () => {
 
       {activeTab === 'history' && (
         <div className="card">
-          <div className="card-header">
-            <h3 className="card-title">SMS Gateway History</h3>
+          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <h3 className="card-title">SMS Dispatch History</h3>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                Audit log of all exact delivered customer messages, recipient handsets, and token usage.
+              </p>
+            </div>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['sms-history'] })}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              <RefreshCw size={13} className={historyLoading ? 'spin' : ''} /> Refresh History
+            </button>
           </div>
           {historyLoading ? (
             <div className="loading-overlay"><div className="spinner" /></div>
-          ) : !historyData || historyData.length === 0 ? (
+          ) : !Array.isArray(historyData) || historyData.length === 0 ? (
             <div className="empty-state" style={{ padding: 'var(--space-xl)' }}>
               <MessageSquare size={40} style={{ opacity: 0.2, marginBottom: 12 }} />
               <h3 className="empty-state-title">No SMS sent yet</h3>
+              <p className="text-muted" style={{ fontSize: '0.8125rem' }}>
+                Outgoing promotional, order confirmation, and due reminder SMS records will appear here.
+              </p>
             </div>
           ) : (
             <div className="table-container">
@@ -531,32 +588,119 @@ const SMSPage = () => {
                 <thead>
                   <tr>
                     <th>Date</th>
-                    <th>Recipients</th>
-                    <th>Template</th>
-                    <th>Delivered</th>
+                    <th>Recipient</th>
+                    <th style={{ minWidth: 260 }}>Delivered Message (Exact Customer Content)</th>
+                    <th>Token Cost</th>
+                    <th>Sent</th>
                     <th>Failed</th>
                     <th>Status</th>
+                    <th style={{ textAlign: 'right' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {historyData.map((log) => (
-                    <tr key={log._id}>
-                      <td style={{ whiteSpace: 'nowrap', fontSize: '0.8125rem' }}>
-                        {new Date(log.createdAt).toLocaleDateString('en-BD', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                      <td>{log.recipients?.length}</td>
-                      <td style={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {log.template}
-                      </td>
-                      <td className="text-success">{log.totalSent}</td>
-                      <td className="text-danger">{log.totalFailed}</td>
-                      <td>
-                        <span className={`badge ${log.status === 'sent' ? 'badge-success' : log.status === 'partial' ? 'badge-warning' : 'badge-danger'}`}>
-                          {log.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
+                  {Array.isArray(historyData) && historyData.map((log) => {
+                    const firstRecipient = log.resolvedTexts?.[0] || log.recipients?.[0] || {};
+                    const totalRecipientsCount = log.recipients?.length || log.resolvedTexts?.length || 1;
+                    const deliveredText = firstRecipient.text || log.template || '';
+                    const isMulti = totalRecipientsCount > 1;
+
+                    return (
+                      <tr
+                        key={log._id}
+                        style={{ cursor: 'pointer', transition: 'background 0.15s' }}
+                        onClick={() => setSelectedLogDetails(log)}
+                        title="Click to view full message & token details"
+                      >
+                        <td style={{ whiteSpace: 'nowrap', fontSize: '0.8125rem' }}>
+                          <div style={{ fontWeight: 500 }}>
+                            {new Date(log.createdAt).toLocaleDateString('en-BD', { day: 'numeric', month: 'short' })}
+                          </div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                            {new Date(log.createdAt).toLocaleTimeString('en-BD', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        </td>
+
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {isMulti ? (
+                            <span className="badge badge-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                              <Users size={12} /> {totalRecipientsCount} Recipients
+                            </span>
+                          ) : (
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: '0.8125rem', color: 'var(--text-primary)' }}>
+                                {firstRecipient.name || 'Recipient'}
+                              </div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--accent-secondary)', fontFamily: 'var(--font-mono)' }}>
+                                {firstRecipient.phone || '—'}
+                              </div>
+                            </div>
+                          )}
+                        </td>
+
+                        <td>
+                          <div style={{
+                            maxWidth: 360,
+                            padding: '6px 10px',
+                            background: 'var(--bg-secondary)',
+                            borderRadius: 'var(--radius-sm)',
+                            border: '1px solid var(--border)',
+                          }}>
+                            <div style={{
+                              fontSize: '0.8125rem',
+                              lineHeight: 1.4,
+                              color: 'var(--text-primary)',
+                              display: '-webkit-box',
+                              WebkitLineClamp: 2,
+                              WebkitBoxOrient: 'vertical',
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'normal',
+                            }}>
+                              {deliveredText}
+                            </div>
+                            {isMulti && (
+                              <div style={{ fontSize: '0.6875rem', color: 'var(--accent-secondary)', marginTop: 3 }}>
+                                + {totalRecipientsCount - 1} more recipient{totalRecipientsCount - 1 > 1 ? 's' : ''} (personalized)
+                              </div>
+                            )}
+                          </div>
+                        </td>
+
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          <span className="badge badge-neutral" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
+                            <Coins size={12} style={{ color: 'var(--warning)' }} />
+                            {log.totalCredits || 1} Credit{log.totalCredits !== 1 ? 's' : ''}
+                          </span>
+                          <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: 2 }}>
+                            {firstRecipient.isUnicode ? 'Unicode (Bangla)' : 'ASCII (English)'}
+                          </div>
+                        </td>
+
+                        <td className="text-success" style={{ fontWeight: 600 }}>{log.totalSent}</td>
+                        <td className="text-danger" style={{ fontWeight: 600 }}>{log.totalFailed}</td>
+
+                        <td>
+                          <span className={`badge ${log.status === 'sent' ? 'badge-success' : log.status === 'partial' ? 'badge-warning' : 'badge-danger'}`}>
+                            {log.status === 'sent' ? 'Delivered' : log.status === 'partial' ? 'Partial' : 'Failed'}
+                          </span>
+                        </td>
+
+                        <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedLogDetails(log);
+                            }}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: '0.75rem' }}
+                          >
+                            <Eye size={13} /> View Full
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -624,7 +768,7 @@ const SMSPage = () => {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)' }}>
-                  {confirmData.data?.map((p, idx) => (
+                  {Array.isArray(confirmData.data) && confirmData.data.map((p, idx) => (
                     <div
                       key={idx}
                       style={{
@@ -685,7 +829,7 @@ const SMSPage = () => {
                   <div>
                     <span style={{ fontWeight: 600 }}>I confirm that I have reviewed the preview messages above.</span>
                     <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2, margin: 0 }}>
-                      The text shown in the preview will be dispatched directly to the {selectedCustomers.length} recipient handsets via Automas SMS Gateway.
+                      The text shown in the preview will be dispatched directly to the {selectedCustomers.length} recipient handsets.
                     </p>
                   </div>
                 </label>
@@ -708,7 +852,7 @@ const SMSPage = () => {
               >
                 {sendMutation.isPending ? (
                   <>
-                    <div className="spinner" /> Dispatching via Automas...
+                    <div className="spinner" /> Dispatching SMS...
                   </>
                 ) : (
                   <>
@@ -721,13 +865,188 @@ const SMSPage = () => {
         </div>
       )}
 
+      {/* Full SMS Message & Token Details Modal */}
+      {selectedLogDetails && (
+        <div className="modal-overlay" onClick={() => setSelectedLogDetails(null)}>
+          <div
+            className="modal"
+            style={{ maxWidth: 720, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                  <MessageSquare size={20} style={{ color: 'var(--accent-secondary)' }} /> Delivered SMS Content & Details
+                </h2>
+                <p style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginTop: 2 }}>
+                  Dispatched on {new Date(selectedLogDetails.createdAt).toLocaleString('en-BD', { dateStyle: 'medium', timeStyle: 'short' })} • Sender ID: <strong>{selectedLogDetails.senderId || configData?.senderId || '8809617639998'}</strong>
+                </p>
+              </div>
+              <button
+                className="btn btn-ghost btn-icon btn-sm"
+                onClick={() => setSelectedLogDetails(null)}
+                title="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ overflowY: 'auto', flex: 1, paddingRight: 'var(--space-sm)' }}>
+              {/* Summary Metric Badges */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                gap: 'var(--space-sm)',
+                marginBottom: 'var(--space-md)',
+              }}>
+                <div style={{ padding: '10px 14px', background: 'var(--bg-glass)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>Total SMS Cost</div>
+                  <div style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <Coins size={16} /> {selectedLogDetails.totalCredits || 1} Credit{selectedLogDetails.totalCredits !== 1 ? 's' : ''}
+                  </div>
+                </div>
+
+                <div style={{ padding: '10px 14px', background: 'var(--bg-glass)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>Recipients</div>
+                  <div style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {selectedLogDetails.recipients?.length || selectedLogDetails.resolvedTexts?.length || 1}
+                  </div>
+                </div>
+
+                <div style={{ padding: '10px 14px', background: 'var(--bg-glass)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>Delivered</div>
+                  <div style={{ fontSize: '1.125rem', fontWeight: 700, color: 'var(--success)' }}>
+                    {selectedLogDetails.totalSent}
+                  </div>
+                </div>
+
+                <div style={{ padding: '10px 14px', background: 'var(--bg-glass)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>Failed</div>
+                  <div style={{ fontSize: '1.125rem', fontWeight: 700, color: selectedLogDetails.totalFailed > 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                    {selectedLogDetails.totalFailed}
+                  </div>
+                </div>
+              </div>
+
+              {/* Exact Rendered Recipient Messages */}
+              <div style={{ marginBottom: 'var(--space-md)' }}>
+                <div style={{ fontSize: '0.8125rem', fontWeight: 600, marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span>Exact Handset Messages Delivered ({selectedLogDetails.resolvedTexts?.length || 1}):</span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>What the customer received</span>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+                  {(selectedLogDetails.resolvedTexts || [{ text: selectedLogDetails.template }]).map((r, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: 'var(--space-md)',
+                        background: 'var(--bg-secondary)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-md)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, flexWrap: 'wrap', gap: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)' }}>
+                            {r.name || selectedLogDetails.recipients?.[idx]?.name || 'Recipient'}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--accent-secondary)', fontFamily: 'var(--font-mono)' }}>
+                            ({r.phone || selectedLogDetails.recipients?.[idx]?.phone || '—'})
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <span className={`badge ${r.status === 'failed' ? 'badge-danger' : 'badge-success'}`} style={{ fontSize: '0.6875rem' }}>
+                            {r.status === 'failed' ? 'Failed' : 'Delivered'}
+                          </span>
+                          <span className="badge badge-neutral" style={{ fontSize: '0.6875rem', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                            <Coins size={10} style={{ color: 'var(--warning)' }} />
+                            {r.credits || 1} Credit{r.credits !== 1 ? 's' : ''}
+                          </span>
+                          <span className="badge badge-neutral" style={{ fontSize: '0.6875rem' }}>
+                            {r.charCount || r.text?.length || 0} chars
+                          </span>
+                          <span className="badge badge-neutral" style={{ fontSize: '0.6875rem' }}>
+                            {r.isUnicode ? 'Unicode (Bangla)' : 'ASCII (English)'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Exact Delivered Text Box */}
+                      <div style={{
+                        padding: '10px 14px',
+                        background: 'var(--bg-input)',
+                        border: '1px solid rgba(255,255,255,0.06)',
+                        borderRadius: 'var(--radius-sm)',
+                        fontSize: '0.875rem',
+                        lineHeight: 1.6,
+                        whiteSpace: 'pre-wrap',
+                        color: 'var(--text-primary)',
+                        userSelect: 'text',
+                      }}>
+                        {r.text}
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => handleCopyMessage(r.text, `${selectedLogDetails._id}-${idx}`)}
+                          style={{ fontSize: '0.75rem', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+                        >
+                          {copiedId === `${selectedLogDetails._id}-${idx}` ? (
+                            <>
+                              <Check size={13} style={{ color: 'var(--success)' }} /> Copied!
+                            </>
+                          ) : (
+                            <>
+                              <Copy size={13} /> Copy Message
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Raw Template Used */}
+              {selectedLogDetails.template && (
+                <div style={{
+                  padding: 'var(--space-sm) var(--space-md)',
+                  background: 'var(--bg-glass)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                  fontSize: '0.75rem',
+                  color: 'var(--text-secondary)',
+                }}>
+                  <span style={{ fontWeight: 600, color: 'var(--text-tertiary)' }}>Template Pattern: </span>
+                  <code>{selectedLogDetails.template}</code>
+                </div>
+              )}
+            </div>
+
+            <div className="modal-footer" style={{ borderTop: '1px solid var(--border)', paddingTop: 'var(--space-md)' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setSelectedLogDetails(null)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Test SMS Modal */}
       {showTestModal && (
         <div className="modal-overlay">
           <div className="modal">
             <div className="modal-header">
               <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-                <Zap size={18} /> Send Test SMS (Automas)
+                <Zap size={18} /> Send Test SMS
               </h2>
               <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setShowTestModal(false)} title="Close">
                 <X size={18} />
@@ -756,7 +1075,7 @@ const SMSPage = () => {
                   />
                 </div>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-                  Sends through <code>https://api.automas.com.bd/smsapiv3</code> with Sender ID: <strong>{configData?.senderId || '8809617639998'}</strong>
+                  Sender ID: <strong>{configData?.senderId || '8809617639998'}</strong> • Bangladesh Operators Supported
                 </div>
               </div>
               <div className="modal-footer">

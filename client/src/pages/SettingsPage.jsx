@@ -169,11 +169,11 @@ const SettingsPage = () => {
           </form>
         </div>
 
-        {/* Automas SMS Gateway Card */}
+        {/* SMS Gateway Card */}
         <div className="card">
           <div className="card-header">
             <h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-              <Radio size={18} style={{ color: 'var(--accent-secondary)' }} /> Automas SMS Gateway
+              <Radio size={18} style={{ color: 'var(--accent-secondary)' }} /> SMS Gateway Integration
             </h3>
             {smsConfig?.isConfigured ? (
               <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
@@ -187,17 +187,10 @@ const SettingsPage = () => {
           </div>
 
           <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 'var(--space-md)' }}>
-            The SMS system is integrated with <strong>Automas Technologies SMS API</strong> (<code>https://sms.automas.com.bd/api</code>) to deliver dynamic bulk and single transactional SMS across Bangladesh operators.
+            The SMS system delivers automated order updates, courier tracking alerts, and personalized due payment reminders directly to recipient handsets across all mobile operators in Bangladesh.
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
-            <div style={{ padding: 'var(--space-md)', background: 'var(--bg-glass)', borderRadius: 'var(--radius-md)' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 2 }}>API Endpoint (GET & POST)</div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8125rem', color: 'var(--accent-secondary)' }}>
-                {smsConfig?.gatewayUrl || 'https://api.automas.com.bd/smsapiv3'}
-              </div>
-            </div>
-
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
               <div style={{ padding: 'var(--space-md)', background: 'var(--bg-glass)', borderRadius: 'var(--radius-md)' }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 2 }}>Sender ID</div>
@@ -206,36 +199,23 @@ const SettingsPage = () => {
                 </div>
               </div>
               <div style={{ padding: 'var(--space-md)', background: 'var(--bg-glass)', borderRadius: 'var(--radius-md)' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 2 }}>Unicode / Bangla Support</div>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 2 }}>Language & Encoding</div>
                 <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--success)' }}>
-                  Auto-detected (Format 8)
+                  Unicode (Bangla) & ASCII
                 </div>
               </div>
             </div>
           </div>
 
           <div style={{ padding: 'var(--space-md)', background: 'var(--bg-input)', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)' }}>
-            <div style={{ fontSize: '0.8125rem', fontWeight: 600, marginBottom: 4 }}>How to update your Automas API Key:</div>
+            <div style={{ fontSize: '0.8125rem', fontWeight: 600, marginBottom: 4 }}>SMS Credentials & Gateway Configuration:</div>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 8 }}>
-              Open your <code>server/.env</code> file and update the following variables with credentials from your Automas portal:
+              Configure your secret API key and approved Sender ID in the <code>server/.env</code> file:
             </p>
             <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)', background: 'rgba(0,0,0,0.3)', padding: '8px 12px', borderRadius: 'var(--radius-sm)' }}>
-              SMS_API_URL=https://api.automas.com.bd/smsapiv3<br />
-              SMS_API_KEY=0ce79e43fbdcb6e7c96f634282a427b1<br />
-              SMS_SENDER_ID=8809617639998
+              SMS_API_KEY=••••••••••••••••••••••••••••••••<br />
+              SMS_SENDER_ID={smsConfig?.senderId || '8809617639998'}
             </div>
-          </div>
-
-          <div style={{ marginTop: 'var(--space-md)', display: 'flex', justifyContent: 'flex-end' }}>
-            <a
-              href="https://sms.automas.com.bd/api"
-              target="_blank"
-              rel="noreferrer"
-              className="btn btn-ghost btn-sm"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-            >
-              Automas API Documentation <ExternalLink size={14} />
-            </a>
           </div>
         </div>
       </div>

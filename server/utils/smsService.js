@@ -34,12 +34,74 @@ export const formatMsisdn = (phone) => {
   return cleaned;
 };
 
+export const AUTOMAS_STATUS_MESSAGES = {
+  0: 'Success',
+  101: 'Invalid Message Length',
+  102: 'Sender ID Not Valid / Not Approved',
+  103: 'Authentication Failed',
+  104: 'Invalid User',
+  105: 'Invalid MSISDN (Phone Number)',
+  106: 'Incorrect API Key',
+  107: 'User Account Suspended',
+  108: 'IP Address Not Allowed',
+  109: 'API Access Not Allowed',
+  110: 'Do Not Disturb (DND) Active',
+  111: 'Spam Word Detected in Message',
+  1000: 'Insufficient SMS Balance',
+  2300: 'Destination Route Issue',
+  2400: 'API Access Not Allowed',
+  3300: 'System Error',
+  2000: 'Destination Provider Unavailable',
+  3000: 'Destination Provider Unavailable',
+  4000: 'Destination Provider Unavailable',
+};
+
+export const parseAutomasResponse = (data) => {
+  if (!data) {
+    return { success: false, error: 'Empty response from SMS gateway' };
+  }
+
+  const respList = Array.isArray(data?.response)
+    ? data.response
+    : Array.isArray(data)
+    ? data
+    : null;
+
+  if (respList && respList.length > 0) {
+    const item = respList[0];
+    const statusCode = Number(item.status);
+    if (statusCode === 0) {
+      return {
+        success: true,
+        id: item.id || item.sid,
+        msisdn: item.msisdn,
+      };
+    } else {
+      const errorMsg =
+        AUTOMAS_STATUS_MESSAGES[statusCode] ||
+        `Gateway error (Status code ${statusCode})`;
+      return {
+        success: false,
+        error: errorMsg,
+        statusCode,
+        id: item.id || item.sid,
+      };
+    }
+  }
+
+  if (typeof data?.response === 'string') {
+    return { success: true, message: data.response };
+  }
+
+  return { success: true };
+};
+
 /**
  * Send a single SMS via Automas API
  * @param {Object} params
  * @param {string} params.to - Recipient phone number
  * @param {string} params.message - SMS content
- * @returns {Promise<{success: boolean, response: any, error?: string}>}
+ * @returns {Promise<{success: boolean, response: any, error?: string, id?: any}>}
  */
 export const sendSms = async ({ to, message }) => {
   const apiUrl = process.env.SMS_API_URL || 'https://api.automas.com.bd/smsapiv3';
@@ -86,10 +148,21 @@ export const sendSms = async ({ to, message }) => {
       timeout: 15000,
     });
 
+    const parsed = parseAutomasResponse(response.data);
+    if (!parsed.success) {
+      console.warn(`[AUTOMAS REJECT] Failed for ${msisdn}:`, parsed.error, response.data);
+      return {
+        success: false,
+        error: parsed.error,
+        response: response.data,
+      };
+    }
+
     console.log(`[AUTOMAS SUCCESS] Sent to ${msisdn}:`, response.data);
 
     return {
       success: true,
+      id: parsed.id,
       response: response.data,
     };
   } catch (err) {
@@ -101,8 +174,19 @@ export const sendSms = async ({ to, message }) => {
         params: queryParams,
         timeout: 15000,
       });
+
+      const parsed = parseAutomasResponse(getResponse.data);
+      if (!parsed.success) {
+        return {
+          success: false,
+          error: parsed.error,
+          response: getResponse.data,
+        };
+      }
+
       return {
         success: true,
+        id: parsed.id,
         response: getResponse.data,
       };
     } catch (fallbackErr) {

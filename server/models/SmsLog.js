@@ -14,13 +14,18 @@ const smsRecipientSchema = new mongoose.Schema(
 
 const smsResolvedSchema = new mongoose.Schema(
   {
+    name: { type: String },
     phone: { type: String, required: true },
     text: { type: String, required: true },
+    charCount: { type: Number },
+    credits: { type: Number, default: 1 },
+    isUnicode: { type: Boolean, default: false },
     status: {
       type: String,
       enum: ['sent', 'failed'],
       default: 'sent',
     },
+    error: { type: String },
   },
   { _id: false }
 );
@@ -33,6 +38,14 @@ const smsLogSchema = new mongoose.Schema(
       required: [true, 'SMS template is required'],
     },
     resolvedTexts: [smsResolvedSchema],
+    totalCredits: {
+      type: Number,
+      default: 1,
+    },
+    senderId: {
+      type: String,
+      default: '8809617639998',
+    },
     totalSent: {
       type: Number,
       default: 0,
