@@ -290,26 +290,25 @@ const SMSPage = () => {
         </div>
       </div>
 
-      {/* Gateway Status & Balance Banner */}
-      <div className="card" style={{
-        marginBottom: 'var(--space-md)',
-        padding: 'var(--space-md) var(--space-lg)',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        flexWrap: 'wrap',
-        gap: 'var(--space-md)',
-        background: 'var(--bg-glass)',
-        borderLeft: '4px solid var(--accent-primary)'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
-          <Radio size={20} style={{ color: 'var(--accent-secondary)' }} />
+      {/* Gateway Status & Balance Strip */}
+      <div className="gateway-status-strip">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 'var(--radius-md)',
+            background: 'rgba(59, 130, 246, 0.1)', color: 'var(--accent-secondary)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center'
+          }}>
+            <Radio size={18} />
+          </div>
           <div>
-            <div style={{ fontSize: '0.875rem', fontWeight: 600 }}>
-              SMS Gateway
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>SMS Gateway</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.6875rem', color: '#10b981', fontWeight: 600 }}>
+                <span className="gateway-live-indicator" /> Live
+              </span>
             </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-              Status: Connected • Sender ID: <strong>{configData?.senderId || '8809617639998'}</strong>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 1 }}>
+              Sender ID: <strong style={{ color: 'var(--text-primary)' }}>{configData?.senderId || '8809617639998'}</strong>
             </div>
           </div>
         </div>
@@ -317,7 +316,7 @@ const SMSPage = () => {
         <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-md)' }}>
           {/* Live Balance Widget */}
           <div style={{
-            background: 'var(--bg-secondary)',
+            background: 'var(--bg-card)',
             padding: '6px 14px',
             borderRadius: 'var(--radius-md)',
             border: '1px solid var(--border)',
@@ -326,10 +325,11 @@ const SMSPage = () => {
             gap: 8,
           }}>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Gateway Balance:</span>
-            <strong style={{ fontSize: '0.9375rem', color: 'var(--accent-secondary)' }}>
+            <strong style={{ fontSize: '0.875rem', color: 'var(--accent-secondary)' }}>
               {formatBalance(balanceData, balanceLoading)}
             </strong>
             <button
+              type="button"
               className="btn btn-ghost btn-icon btn-sm"
               onClick={() => {
                 refetchBalance();
@@ -344,11 +344,11 @@ const SMSPage = () => {
 
           <div>
             {configData?.isConfigured ? (
-              <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <CheckCircle2 size={12} /> Connected (Live Mode)
+              <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px' }}>
+                <CheckCircle2 size={12} /> Connected
               </span>
             ) : (
-              <span className="badge badge-warning" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span className="badge badge-warning" style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 10px' }}>
                 <Info size={12} /> Simulated Mode
               </span>
             )}
@@ -359,76 +359,91 @@ const SMSPage = () => {
       {/* Real-time SMS Send Count & Tracking Metrics Grid */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
         gap: 'var(--space-md)',
         marginBottom: 'var(--space-lg)',
       }}>
-        <div className="stat-card">
-          <div className="stat-icon" style={{ background: 'rgba(59, 130, 246, 0.15)', color: 'var(--accent-primary)' }}>
-            <Send size={20} />
+        {/* Total SMS Delivered */}
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Total Delivered</span>
+            <div className="metric-card-icon" style={{ background: 'rgba(59, 130, 246, 0.12)', color: '#60a5fa' }}>
+              <Send size={15} />
+            </div>
           </div>
-          <div className="stat-info">
-            <span className="stat-label">Total SMS Delivered</span>
-            <span className="stat-value">{statsData?.totalSent?.toLocaleString() ?? 0}</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--success)' }}>
-              {statsData?.deliveryRate ?? 100}% Delivery Rate ({statsData?.totalFailed ?? 0} failed)
+          <div className="metric-card-value">
+            {statsData?.totalSent?.toLocaleString() ?? 0}
+          </div>
+          <div className="metric-card-footer">
+            <span className="badge badge-success" style={{ fontSize: '0.6875rem', padding: '1px 6px' }}>
+              {statsData?.deliveryRate ?? 100}% Success
             </span>
+            <span>{statsData?.totalFailed ?? 0} failed</span>
           </div>
         </div>
 
-        <div className="stat-card">
-          <div className="stat-icon" style={{ background: 'rgba(234, 179, 8, 0.15)', color: 'var(--warning)' }}>
-            <Coins size={20} />
+        {/* Tokens / Credits Used */}
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Credits Used</span>
+            <div className="metric-card-icon" style={{ background: 'rgba(234, 179, 8, 0.12)', color: '#fbbf24' }}>
+              <Coins size={15} />
+            </div>
           </div>
-          <div className="stat-info">
-            <span className="stat-label">Tokens / Credits Used</span>
-            <span className="stat-value">{statsData?.totalCredits?.toLocaleString() ?? 0}</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-              Across {statsData?.totalDispatches ?? 0} Dispatches
-            </span>
+          <div className="metric-card-value">
+            {statsData?.totalCredits?.toLocaleString() ?? 0}
           </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--success)' }}>
-            <Clock size={20} />
-          </div>
-          <div className="stat-info">
-            <span className="stat-label">Dispatched Today</span>
-            <span className="stat-value">{statsData?.sentToday?.toLocaleString() ?? 0}</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-              {statsData?.creditsToday ?? 0} token credits today
-            </span>
+          <div className="metric-card-footer">
+            <span>Across <strong>{statsData?.totalDispatches ?? 0}</strong> dispatches</span>
           </div>
         </div>
 
-        <div className="stat-card">
-          <div className="stat-icon" style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc' }}>
-            <TrendingUp size={20} />
+        {/* Dispatched Today */}
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Sent Today</span>
+            <div className="metric-card-icon" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#34d399' }}>
+              <Clock size={15} />
+            </div>
           </div>
-          <div className="stat-info">
-            <span className="stat-label">Dispatched This Month</span>
-            <span className="stat-value">{statsData?.sentThisMonth?.toLocaleString() ?? 0}</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-              {statsData?.creditsThisMonth ?? 0} token credits this month
-            </span>
+          <div className="metric-card-value">
+            {statsData?.sentToday?.toLocaleString() ?? 0}
+          </div>
+          <div className="metric-card-footer">
+            <span><strong>{statsData?.creditsToday ?? 0}</strong> credits consumed</span>
+          </div>
+        </div>
+
+        {/* Dispatched This Month */}
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Sent This Month</span>
+            <div className="metric-card-icon" style={{ background: 'rgba(168, 85, 247, 0.12)', color: '#c084fc' }}>
+              <TrendingUp size={15} />
+            </div>
+          </div>
+          <div className="metric-card-value">
+            {statsData?.sentThisMonth?.toLocaleString() ?? 0}
+          </div>
+          <div className="metric-card-footer">
+            <span><strong>{statsData?.creditsThisMonth ?? 0}</strong> credits this month</span>
           </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 'var(--space-xs)', marginBottom: 'var(--space-xl)', background: 'var(--bg-glass)', borderRadius: 'var(--radius-md)', padding: 2, width: 'fit-content' }}>
+      {/* Segmented Navigation Tabs */}
+      <div className="segmented-tabs">
         <button
-          className={`btn btn-sm ${activeTab === 'compose' ? 'btn-primary' : 'btn-ghost'}`}
+          type="button"
+          className={`segmented-tab ${activeTab === 'compose' ? 'active' : ''}`}
           onClick={() => setActiveTab('compose')}
-          style={{ borderRadius: 'var(--radius-sm)' }}
         >
           <Send size={14} /> Compose & Bulk Send
         </button>
         <button
-          className={`btn btn-sm ${activeTab === 'history' ? 'btn-primary' : 'btn-ghost'}`}
+          type="button"
+          className={`segmented-tab ${activeTab === 'history' ? 'active' : ''}`}
           onClick={() => setActiveTab('history')}
-          style={{ borderRadius: 'var(--radius-sm)' }}
         >
           <Clock size={14} /> SMS History
         </button>

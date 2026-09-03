@@ -16,6 +16,8 @@ import {
   DollarSign,
   FileSpreadsheet,
   MessageSquare,
+  Trash2,
+  AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -27,6 +29,7 @@ const CustomersPage = () => {
   const [showPaymentModal, setShowPaymentModal] = useState(null);
   const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'cash', note: '' });
   const [filterDue, setFilterDue] = useState('');
+  const [customerToDelete, setCustomerToDelete] = useState(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -72,6 +75,17 @@ const CustomersPage = () => {
       setPaymentForm({ amount: '', method: 'cash', note: '' });
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to record payment'),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id) => customerAPI.delete(id, { cascade: true }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      toast.success('Customer deleted successfully');
+      setCustomerToDelete(null);
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to delete customer'),
   });
 
   const closeModal = () => {
@@ -246,6 +260,14 @@ const CustomersPage = () => {
                             <DollarSign size={13} /> Pay
                           </button>
                         )}
+                        <button
+                          className="btn btn-ghost btn-icon btn-sm text-danger"
+                          title="Delete Customer"
+                          onClick={() => setCustomerToDelete(c)}
+                          style={{ color: 'var(--danger)' }}
+                        >
+                          <Trash2 size={15} />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -340,7 +362,7 @@ const CustomersPage = () => {
                     className="btn btn-secondary btn-sm"
                     onClick={() => navigate(`/customers/${c._id}`)}
                   >
-                    <Eye size={14} /> View Ledger
+                    <Eye size={14} /> Ledger
                   </button>
                   <button
                     type="button"
@@ -348,6 +370,14 @@ const CustomersPage = () => {
                     onClick={() => openEdit(c)}
                   >
                     <Edit2 size={14} /> Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm text-danger"
+                    onClick={() => setCustomerToDelete(c)}
+                    style={{ color: 'var(--danger)' }}
+                  >
+                    <Trash2 size={14} /> Delete
                   </button>
                   {c.totalDue > 0 && (
                     <button
@@ -568,6 +598,78 @@ const CustomersPage = () => {
         </div>
       )}
 
+      {/* Delete Customer Confirmation Modal */}
+      {customerToDelete && (
+        <div className="modal-overlay" onClick={() => !deleteMutation.isPending && setCustomerToDelete(null)}>
+          <div className="modal animate-slide-up" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="modal-header" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                <div style={{
+                  width: 38, height: 38, borderRadius: 'var(--radius-md)',
+                  background: 'var(--danger-light)', color: 'var(--danger)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  <AlertTriangle size={20} />
+                </div>
+                <h3 className="modal-title" style={{ color: 'var(--danger)' }}>Delete Customer</h3>
+              </div>
+              <button
+                className="btn btn-ghost btn-icon btn-sm"
+                onClick={() => setCustomerToDelete(null)}
+                disabled={deleteMutation.isPending}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ paddingTop: 'var(--space-md)' }}>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-primary)', marginBottom: 'var(--space-md)', lineHeight: 1.5 }}>
+                Are you sure you want to delete <strong>{customerToDelete.name}</strong> ({customerToDelete.phone})?
+              </p>
+
+              {(customerToDelete.orderCount > 0 || customerToDelete.totalDue > 0) && (
+                <div style={{
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '10px 14px',
+                  fontSize: '0.8125rem',
+                  color: 'var(--text-secondary)',
+                  marginBottom: 'var(--space-md)',
+                }}>
+                  <div style={{ fontWeight: 600, color: 'var(--danger)', marginBottom: 2 }}>Warning:</div>
+                  This customer has <strong>{customerToDelete.orderCount || 0} order(s)</strong> and <strong>৳{(customerToDelete.totalDue || 0).toLocaleString()} standing due</strong>. Deleting this customer will permanently delete their profile and associated order records.
+                </div>
+              )}
+
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="modal-footer" style={{ borderTop: 'none', paddingTop: 0 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setCustomerToDelete(null)}
+                disabled={deleteMutation.isPending}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => deleteMutation.mutate(customerToDelete._id)}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending && <div className="spinner" />}
+                <Trash2 size={15} /> Delete Customer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Responsive Styles */}
       <style>{`
         .desktop-customers-table {
@@ -607,8 +709,8 @@ const CustomersPage = () => {
 
         .customer-card-actions {
           display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 8px;
+          grid-template-columns: repeat(3, 1fr);
+          gap: 6px;
           margin-top: 6px;
           padding-top: 8px;
           border-top: 1px solid var(--border);

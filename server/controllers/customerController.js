@@ -297,3 +297,58 @@ export const recordPayment = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc    Delete customer
+// @route   DELETE /api/customers/:id
+export const deleteCustomer = async (req, res, next) => {
+  try {
+    const customer = await Customer.findById(req.params.id);
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Customer not found',
+      });
+    }
+
+    // Check associated records
+    const [orderCount, paymentCount] = await Promise.all([
+      Order.countDocuments({ customer: customer._id }),
+      Payment.countDocuments({ customer: customer._id }),
+    ]);
+
+    // Cascade delete associated orders and payments
+    if (orderCount > 0) {
+      await Order.deleteMany({ customer: customer._id });
+    }
+    if (paymentCount > 0) {
+      await Payment.deleteMany({ customer: customer._id });
+    }
+
+    await Customer.findByIdAndDelete(customer._id);
+
+    await createAuditLog({
+      req,
+      action: 'CUSTOMER_DELETE',
+      category: 'CUSTOMER',
+      description: `Deleted customer ${customer.name} (${customer.phone})${orderCount > 0 ? ` and associated ${orderCount} orders` : ''}`,
+      targetId: customer._id,
+      targetType: 'Customer',
+      details: {
+        name: customer.name,
+        phone: customer.phone,
+        totalDue: customer.totalDue,
+        totalPurchases: customer.totalPurchases,
+        orderCount,
+        paymentCount,
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Customer ${customer.name} deleted successfully`,
+    });
+  } catch (error) {
+    next(error);
+  }
+};

@@ -23,9 +23,40 @@ import {
   Edit2,
   CheckCircle2,
   AlertTriangle,
+  TrendingUp,
+  BarChart3,
+  ArrowRight,
+  RotateCcw,
+  Coins,
+  Clock,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+
+const formatSummaryDate = (dateStr) => {
+  if (!dateStr) return { formatted: '', isToday: false, isYesterday: false };
+  const parts = dateStr.split('-').map(Number);
+  const dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  const todayStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+
+  const yest = new Date();
+  yest.setDate(yest.getDate() - 1);
+  const yestStr = `${yest.getFullYear()}-${pad(yest.getMonth() + 1)}-${pad(yest.getDate())}`;
+
+  const isToday = dateStr === todayStr;
+  const isYesterday = dateStr === yestStr;
+
+  const formatted = dateObj.toLocaleDateString('en-BD', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+
+  return { formatted, isToday, isYesterday };
+};
 
 const getStatusBadge = (status) => {
   const map = {
@@ -73,8 +104,65 @@ const OrdersPage = () => {
     notes: '',
   });
 
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'summary'
+  const [datePreset, setDatePreset] = useState('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  const applyDatePreset = (preset) => {
+    setDatePreset(preset);
+    setPage(1);
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    const toYMD = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+    if (preset === 'all') {
+      setStartDate('');
+      setEndDate('');
+    } else if (preset === 'today') {
+      const todayStr = toYMD(now);
+      setStartDate(todayStr);
+      setEndDate(todayStr);
+    } else if (preset === 'yesterday') {
+      const y = new Date();
+      y.setDate(y.getDate() - 1);
+      const yestStr = toYMD(y);
+      setStartDate(yestStr);
+      setEndDate(yestStr);
+    } else if (preset === '7days') {
+      const past = new Date();
+      past.setDate(past.getDate() - 6);
+      setStartDate(toYMD(past));
+      setEndDate(toYMD(now));
+    } else if (preset === '30days') {
+      const past = new Date();
+      past.setDate(past.getDate() - 29);
+      setStartDate(toYMD(past));
+      setEndDate(toYMD(now));
+    } else if (preset === 'thisMonth') {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      setStartDate(toYMD(firstDay));
+      setEndDate(toYMD(now));
+    }
+  };
+
+  const clearDateFilter = () => {
+    setDatePreset('all');
+    setStartDate('');
+    setEndDate('');
+    setPage(1);
+  };
+
+  const filterBySpecificDate = (dateStr) => {
+    setStartDate(dateStr);
+    setEndDate(dateStr);
+    setDatePreset('custom');
+    setPage(1);
+    setViewMode('list');
+  };
+
   const { data, isLoading } = useQuery({
-    queryKey: ['orders', page, statusFilter, paymentFilter],
+    queryKey: ['orders', page, statusFilter, paymentFilter, startDate, endDate],
     queryFn: () =>
       orderAPI
         .getAll({
@@ -82,8 +170,23 @@ const OrdersPage = () => {
           limit: 20,
           status: statusFilter || undefined,
           paymentStatus: paymentFilter || undefined,
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
         })
         .then((r) => r.data),
+  });
+
+  const { data: summaryData, isLoading: isSummaryLoading } = useQuery({
+    queryKey: ['orders-daily-summary', startDate, endDate, statusFilter, paymentFilter],
+    queryFn: () =>
+      orderAPI
+        .getDailySummary({
+          startDate: startDate || undefined,
+          endDate: endDate || undefined,
+          status: statusFilter || undefined,
+          paymentStatus: paymentFilter || undefined,
+        })
+        .then((r) => r.data.data),
   });
 
   // Search customers for order creation
@@ -291,41 +394,410 @@ const OrdersPage = () => {
         </div>
       </div>
 
-      {/* Filters */}
-      <div style={{ display: 'flex', gap: 'var(--space-md)', marginBottom: 'var(--space-lg)', flexWrap: 'wrap' }}>
-        <select className="form-select" style={{ width: 'auto', minWidth: 130 }} value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
-          <option value="">All Status</option>
-          <option value="pending">Pending</option>
-          <option value="confirmed">Confirmed</option>
-          <option value="processing">Processing</option>
-          <option value="shipped">Shipped</option>
-          <option value="delivered">Delivered</option>
-          <option value="cancelled">Cancelled</option>
-        </select>
-        <select className="form-select" style={{ width: 'auto', minWidth: 130 }} value={paymentFilter} onChange={(e) => { setPaymentFilter(e.target.value); setPage(1); }}>
-          <option value="">All Payment</option>
-          <option value="unpaid">Unpaid</option>
-          <option value="partial">Partial</option>
-          <option value="paid">Paid</option>
-        </select>
+      {/* View Mode Switcher */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-md)', marginBottom: 'var(--space-md)' }}>
+        <div className="segmented-tabs" style={{ marginBottom: 0 }}>
+          <button
+            type="button"
+            className={`segmented-tab ${viewMode === 'list' ? 'active' : ''}`}
+            onClick={() => setViewMode('list')}
+          >
+            <Package size={15} /> All Orders ({pagination.total || 0})
+          </button>
+          <button
+            type="button"
+            className={`segmented-tab ${viewMode === 'summary' ? 'active' : ''}`}
+            onClick={() => setViewMode('summary')}
+          >
+            <Calendar size={15} /> Date-wise Summary Breakdown
+          </button>
+        </div>
+
+        {(startDate || endDate) && (
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '4px 12px',
+            borderRadius: 'var(--radius-full)',
+            background: 'var(--accent-primary-light)',
+            color: 'var(--accent-secondary)',
+            fontSize: '0.75rem',
+            fontWeight: 500,
+          }}>
+            <Calendar size={13} />
+            <span>
+              {startDate === endDate ? `Date: ${startDate}` : `${startDate || 'Start'} → ${endDate || 'End'}`}
+            </span>
+            <button
+              type="button"
+              onClick={clearDateFilter}
+              style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+              title="Clear date filter"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )}
       </div>
 
-      {/* Orders Table & Mobile Cards */}
-      {isLoading ? (
-        <div className="loading-overlay">
-          <div className="spinner" style={{ width: 32, height: 32 }} />
-          <span>Loading orders...</span>
+      {/* Date Presets & Filter Controls Bar */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 'var(--space-md)',
+        marginBottom: 'var(--space-lg)',
+        flexWrap: 'wrap',
+        background: 'var(--bg-glass)',
+        padding: '10px 14px',
+        borderRadius: 'var(--radius-md)',
+        border: '1px solid var(--border)'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+            Date Range:
+          </span>
+          <div style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap' }}>
+            {[
+              { id: 'all', label: 'All Time' },
+              { id: 'today', label: 'Today' },
+              { id: 'yesterday', label: 'Yesterday' },
+              { id: '7days', label: 'Last 7 Days' },
+              { id: '30days', label: 'Last 30 Days' },
+              { id: 'thisMonth', label: 'This Month' },
+              { id: 'custom', label: 'Custom' },
+            ].map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`btn btn-sm ${datePreset === p.id ? 'btn-primary' : 'btn-ghost'}`}
+                style={{ fontSize: '0.75rem', padding: '3px 10px', height: 26 }}
+                onClick={() => applyDatePreset(p.id)}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          {datePreset === 'custom' && (
+            <div style={{ display: 'inline-flex', gap: 6, alignItems: 'center', marginLeft: 4 }}>
+              <input
+                type="date"
+                className="form-input"
+                value={startDate}
+                onChange={(e) => { setStartDate(e.target.value); setPage(1); }}
+                style={{ width: 'auto', padding: '2px 8px', fontSize: '0.75rem', height: 26 }}
+              />
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>to</span>
+              <input
+                type="date"
+                className="form-input"
+                value={endDate}
+                onChange={(e) => { setEndDate(e.target.value); setPage(1); }}
+                style={{ width: 'auto', padding: '2px 8px', fontSize: '0.75rem', height: 26 }}
+              />
+            </div>
+          )}
         </div>
-      ) : orders.length === 0 ? (
-        <div className="empty-state">
-          <Package size={48} style={{ opacity: 0.2, marginBottom: 16 }} />
-          <h3 className="empty-state-title">No orders found</h3>
-          <p className="empty-state-text">Create your first order to get started</p>
+
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap', alignItems: 'center' }}>
+          <select
+            className="form-select"
+            style={{ width: 'auto', minWidth: 120, height: 28, fontSize: '0.75rem', padding: '2px 24px 2px 8px' }}
+            value={statusFilter}
+            onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+          >
+            <option value="">All Status</option>
+            <option value="pending">Pending</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="processing">Processing</option>
+            <option value="shipped">Shipped</option>
+            <option value="delivered">Delivered</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+          <select
+            className="form-select"
+            style={{ width: 'auto', minWidth: 120, height: 28, fontSize: '0.75rem', padding: '2px 24px 2px 8px' }}
+            value={paymentFilter}
+            onChange={(e) => { setPaymentFilter(e.target.value); setPage(1); }}
+          >
+            <option value="">All Payment</option>
+            <option value="unpaid">Unpaid</option>
+            <option value="partial">Partial</option>
+            <option value="paid">Paid</option>
+          </select>
         </div>
-      ) : (
+      </div>
+
+      {/* VIEW 1: Date-wise Summary Breakdown */}
+      {viewMode === 'summary' && (
+        <div className="animate-fade-in">
+          {/* Summary Metric Cards */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: 'var(--space-md)',
+            marginBottom: 'var(--space-lg)',
+          }}>
+            <div className="metric-card">
+              <div className="metric-card-header">
+                <span className="metric-card-label">Total Orders</span>
+                <div className="metric-card-icon" style={{ background: 'rgba(59, 130, 246, 0.12)', color: '#60a5fa' }}>
+                  <Package size={15} />
+                </div>
+              </div>
+              <div className="metric-card-value">{summaryData?.totals?.totalOrders || 0}</div>
+              <div className="metric-card-footer">
+                <span>Across <strong>{summaryData?.days?.length || 0}</strong> active dates</span>
+              </div>
+            </div>
+
+            <div className="metric-card">
+              <div className="metric-card-header">
+                <span className="metric-card-label">Total Order Amount</span>
+                <div className="metric-card-icon" style={{ background: 'rgba(234, 179, 8, 0.12)', color: '#fbbf24' }}>
+                  <DollarSign size={15} />
+                </div>
+              </div>
+              <div className="metric-card-value">৳{(summaryData?.totals?.totalAmount || 0).toLocaleString()}</div>
+              <div className="metric-card-footer">
+                <span>Avg <strong>৳{Math.round((summaryData?.totals?.totalAmount || 0) / (summaryData?.totals?.totalOrders || 1)).toLocaleString()}</strong> / order</span>
+              </div>
+            </div>
+
+            <div className="metric-card">
+              <div className="metric-card-header">
+                <span className="metric-card-label">Total Collected</span>
+                <div className="metric-card-icon" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#34d399' }}>
+                  <Coins size={15} />
+                </div>
+              </div>
+              <div className="metric-card-value" style={{ color: 'var(--success)' }}>
+                ৳{(summaryData?.totals?.totalPaid || 0).toLocaleString()}
+              </div>
+              <div className="metric-card-footer">
+                <span>
+                  {summaryData?.totals?.totalAmount > 0 
+                    ? Math.round(((summaryData?.totals?.totalPaid || 0) / summaryData.totals.totalAmount) * 100)
+                    : 100}% collection rate
+                </span>
+              </div>
+            </div>
+
+            <div className="metric-card">
+              <div className="metric-card-header">
+                <span className="metric-card-label">Total Outstanding Due</span>
+                <div className="metric-card-icon" style={{ background: 'rgba(239, 68, 68, 0.12)', color: 'var(--danger)' }}>
+                  <AlertTriangle size={15} />
+                </div>
+              </div>
+              <div className="metric-card-value" style={{ color: 'var(--danger)' }}>
+                ৳{(summaryData?.totals?.totalDue || 0).toLocaleString()}
+              </div>
+              <div className="metric-card-footer">
+                <span>Pending payment & COD</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Daily Breakdown Table */}
+          {isSummaryLoading ? (
+            <div className="loading-overlay">
+              <div className="spinner" style={{ width: 32, height: 32 }} />
+              <span>Calculating date-wise summary...</span>
+            </div>
+          ) : !summaryData?.days || summaryData.days.length === 0 ? (
+            <div className="empty-state">
+              <Calendar size={48} style={{ opacity: 0.2, marginBottom: 16 }} />
+              <h3 className="empty-state-title">No orders in this period</h3>
+              <p className="empty-state-text">Try selecting "All Time" or adjusting your date range filter</p>
+            </div>
+          ) : (
+            <>
+              {/* Desktop Table */}
+              <div className="table-container desktop-orders-table">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th style={{ textAlign: 'center' }}>Total Orders</th>
+                      <th style={{ textAlign: 'right' }}>Total Bill (৳)</th>
+                      <th style={{ textAlign: 'right' }}>Collected (৳)</th>
+                      <th style={{ textAlign: 'right' }}>Due (৳)</th>
+                      <th style={{ textAlign: 'right' }}>Avg Order (৳)</th>
+                      <th>Status Breakdown</th>
+                      <th style={{ textAlign: 'right' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summaryData.days.map((day) => {
+                      const { formatted, isToday, isYesterday } = formatSummaryDate(day.date);
+                      return (
+                        <tr key={day.date}>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ fontWeight: 600 }}>{formatted}</span>
+                              {isToday && <span className="badge badge-primary" style={{ fontSize: '0.625rem', padding: '1px 5px' }}>Today</span>}
+                              {isYesterday && <span className="badge badge-neutral" style={{ fontSize: '0.625rem', padding: '1px 5px' }}>Yesterday</span>}
+                            </div>
+                            <span style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>{day.date}</span>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <span className="badge badge-info" style={{ fontWeight: 600, fontSize: '0.75rem', padding: '2px 8px' }}>
+                              {day.orderCount} {day.orderCount === 1 ? 'order' : 'orders'}
+                            </span>
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 700, fontSize: '0.9375rem' }}>
+                            ৳{day.totalAmount.toLocaleString()}
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--success)' }}>
+                            ৳{day.totalPaid.toLocaleString()}
+                          </td>
+                          <td style={{ textAlign: 'right', fontWeight: 600, color: day.totalDue > 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                            ৳{day.totalDue.toLocaleString()}
+                          </td>
+                          <td style={{ textAlign: 'right', color: 'var(--text-secondary)' }}>
+                            ৳{day.avgOrderValue.toLocaleString()}
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                              {Object.entries(day.statusCounts || {}).map(([st, cnt]) => (
+                                <span key={st} className={`badge ${getStatusBadge(st)}`} style={{ fontSize: '0.625rem', padding: '1px 5px' }}>
+                                  {cnt} {st}
+                                </span>
+                              ))}
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              onClick={() => filterBySpecificDate(day.date)}
+                              title={`View ${day.orderCount} orders for ${day.date}`}
+                              style={{ fontSize: '0.75rem', padding: '4px 8px', gap: 4 }}
+                            >
+                              <Eye size={13} /> View Orders <ArrowRight size={11} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{ background: 'var(--bg-glass)', fontWeight: 700 }}>
+                      <td>Grand Total ({summaryData.days.length} Days)</td>
+                      <td style={{ textAlign: 'center' }}>{summaryData.totals.totalOrders} orders</td>
+                      <td style={{ textAlign: 'right' }}>৳{summaryData.totals.totalAmount.toLocaleString()}</td>
+                      <td style={{ textAlign: 'right', color: 'var(--success)' }}>৳{summaryData.totals.totalPaid.toLocaleString()}</td>
+                      <td style={{ textAlign: 'right', color: 'var(--danger)' }}>৳{summaryData.totals.totalDue.toLocaleString()}</td>
+                      <td style={{ textAlign: 'right' }}>
+                        ৳{Math.round((summaryData.totals.totalAmount || 0) / (summaryData.totals.totalOrders || 1)).toLocaleString()}
+                      </td>
+                      <td colSpan={2}></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Mobile Breakdown Cards */}
+              <div className="mobile-orders-cards">
+                {summaryData.days.map((day) => {
+                  const { formatted, isToday, isYesterday } = formatSummaryDate(day.date);
+                  return (
+                    <div
+                      key={day.date}
+                      className="card"
+                      style={{
+                        padding: 'var(--space-md)',
+                        background: 'var(--bg-secondary)',
+                        border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-md)',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 'var(--space-sm)',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <strong style={{ fontSize: '0.9375rem' }}>{formatted}</strong>
+                            {isToday && <span className="badge badge-primary" style={{ fontSize: '0.625rem' }}>Today</span>}
+                            {isYesterday && <span className="badge badge-neutral" style={{ fontSize: '0.625rem' }}>Yesterday</span>}
+                          </div>
+                          <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>{day.date}</div>
+                        </div>
+                        <span className="badge badge-info" style={{ fontWeight: 600 }}>
+                          {day.orderCount} {day.orderCount === 1 ? 'order' : 'orders'}
+                        </span>
+                      </div>
+
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr 1fr',
+                        gap: 6,
+                        background: 'var(--bg-glass)',
+                        padding: '8px 10px',
+                        borderRadius: 'var(--radius-sm)',
+                        textAlign: 'center',
+                      }}>
+                        <div>
+                          <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>Total</div>
+                          <div style={{ fontWeight: 700, fontSize: '0.875rem' }}>৳{day.totalAmount.toLocaleString()}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>Collected</div>
+                          <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--success)' }}>৳{day.totalPaid.toLocaleString()}</div>
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>Due</div>
+                          <div style={{ fontWeight: 600, fontSize: '0.875rem', color: day.totalDue > 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                            ৳{day.totalDue.toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-sm"
+                        onClick={() => filterBySpecificDate(day.date)}
+                        style={{ width: '100%', justifyContent: 'center', gap: 6, minHeight: 34 }}
+                      >
+                        <Eye size={14} /> View {day.orderCount} Orders for this Date
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* VIEW 2: Orders List (Table & Mobile Cards) */}
+      {viewMode === 'list' && (
         <>
-          {/* Desktop / Tablet Table View */}
-          <div className="table-container desktop-orders-table">
+          {isLoading ? (
+            <div className="loading-overlay">
+              <div className="spinner" style={{ width: 32, height: 32 }} />
+              <span>Loading orders...</span>
+            </div>
+          ) : orders.length === 0 ? (
+            <div className="empty-state">
+              <Package size={48} style={{ opacity: 0.2, marginBottom: 16 }} />
+              <h3 className="empty-state-title">No orders found</h3>
+              <p className="empty-state-text">
+                {startDate || endDate ? 'Try changing or clearing your date range filter' : 'Create your first order to get started'}
+              </p>
+              {(startDate || endDate) && (
+                <button type="button" className="btn btn-secondary btn-sm" onClick={clearDateFilter} style={{ marginTop: 12 }}>
+                  <RotateCcw size={14} /> Reset Filters
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Desktop / Tablet Table View */}
+              <div className="table-container desktop-orders-table">
             <table className="table orders-table">
               <thead>
                 <tr>
@@ -588,16 +1060,18 @@ const OrdersPage = () => {
             ))}
           </div>
 
-          {pagination.pages > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'var(--space-md)', marginTop: 'var(--space-lg)' }}>
-              <button className="btn btn-ghost btn-sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
-                <ChevronLeft size={16} /> Previous
-              </button>
-              <span className="text-muted" style={{ fontSize: '0.875rem' }}>Page {page} of {pagination.pages}</span>
-              <button className="btn btn-ghost btn-sm" onClick={() => setPage((p) => Math.min(pagination.pages, p + 1))} disabled={page >= pagination.pages}>
-                Next <ChevronRight size={16} />
-              </button>
-            </div>
+              {pagination.pages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'var(--space-md)', marginTop: 'var(--space-lg)' }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+                    <ChevronLeft size={16} /> Previous
+                  </button>
+                  <span className="text-muted" style={{ fontSize: '0.875rem' }}>Page {page} of {pagination.pages}</span>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setPage((p) => Math.min(pagination.pages, p + 1))} disabled={page >= pagination.pages}>
+                    Next <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </>
       )}

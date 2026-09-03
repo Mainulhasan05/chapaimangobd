@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { dashboardAPI } from '../api';
 import {
@@ -56,6 +57,7 @@ const getStatusBadge = (status) => {
 };
 
 const DashboardPage = () => {
+  const [chartViewMode, setChartViewMode] = useState('chart');
   const { data: statsData, isLoading: statsLoading } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: () => dashboardAPI.getStats().then((r) => r.data.data),
@@ -225,15 +227,68 @@ const DashboardPage = () => {
       {/* Charts */}
       <div className="dashboard-charts">
         <div className="chart-card">
-          <div className="chart-card-header">
+          <div className="chart-card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <h3 className="chart-card-title">Sales & Collections</h3>
+            <div style={{ display: 'flex', gap: 4 }}>
+              <button
+                type="button"
+                className={`btn btn-sm ${chartViewMode === 'chart' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setChartViewMode('chart')}
+                style={{ fontSize: '0.6875rem', padding: '2px 8px', height: 24 }}
+              >
+                Chart
+              </button>
+              <button
+                type="button"
+                className={`btn btn-sm ${chartViewMode === 'table' ? 'btn-primary' : 'btn-ghost'}`}
+                onClick={() => setChartViewMode('table')}
+                style={{ fontSize: '0.6875rem', padding: '2px 8px', height: 24 }}
+              >
+                Date-wise Breakdown
+              </button>
+            </div>
           </div>
-          <div style={{ height: 300 }}>
-            {chartData && chartData.length > 0 ? (
-              <Line data={lineChartData} options={chartOptions} />
+          <div style={{ height: 300, overflowY: chartViewMode === 'table' ? 'auto' : 'hidden' }}>
+            {chartViewMode === 'chart' ? (
+              chartData && chartData.length > 0 ? (
+                <Line data={lineChartData} options={chartOptions} />
+              ) : (
+                <div className="empty-state">
+                  <p className="text-muted">No chart data available yet. Create some orders to see trends.</p>
+                </div>
+              )
             ) : (
-              <div className="empty-state">
-                <p className="text-muted">No chart data available yet. Create some orders to see trends.</p>
+              <div style={{ maxHeight: 300, overflowY: 'auto' }}>
+                <table className="table" style={{ fontSize: '0.8125rem' }}>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th style={{ textAlign: 'center' }}>Orders</th>
+                      <th style={{ textAlign: 'right' }}>Total Sales</th>
+                      <th style={{ textAlign: 'right' }}>Collected</th>
+                      <th style={{ textAlign: 'right' }}>Due</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {[...(chartData || [])].reverse().map((d) => (
+                      <tr key={d._id}>
+                        <td style={{ fontWeight: 500 }}>
+                          {new Date(d._id).toLocaleDateString('en-BD', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <span className="badge badge-info" style={{ fontSize: '0.6875rem', padding: '1px 6px' }}>
+                            {d.orderCount || 1}
+                          </span>
+                        </td>
+                        <td style={{ textAlign: 'right', fontWeight: 600 }}>৳{d.totalSales?.toLocaleString()}</td>
+                        <td style={{ textAlign: 'right', color: 'var(--success)' }}>৳{d.totalCollected?.toLocaleString()}</td>
+                        <td style={{ textAlign: 'right', color: d.totalDue > 0 ? 'var(--danger)' : 'var(--text-secondary)' }}>
+                          ৳{d.totalDue?.toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>

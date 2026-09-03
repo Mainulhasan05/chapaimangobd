@@ -163,49 +163,63 @@ const AuditLogsPage = () => {
 
       {/* KPI Stats Grid */}
       <div className="stats-grid" style={{ marginBottom: 'var(--space-xl)' }}>
-        <div className="stat-card">
-          <div className="stat-icon" style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa' }}>
-            <Activity size={22} />
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Total Events Logged</span>
+            <div className="metric-card-icon" style={{ background: 'rgba(59, 130, 246, 0.12)', color: '#60a5fa' }}>
+              <Activity size={16} />
+            </div>
           </div>
-          <div className="stat-info">
-            <span className="stat-label">Total Events Logged</span>
-            <span className="stat-value">{stats.totalLogs?.toLocaleString() || 0}</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>All-time audit record</span>
+          <div className="metric-card-value">
+            {stats.totalLogs?.toLocaleString() || 0}
           </div>
-        </div>
-
-        <div className="stat-card">
-          <div className="stat-icon" style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#34d399' }}>
-            <Clock size={22} />
-          </div>
-          <div className="stat-info">
-            <span className="stat-label">Today's Activities</span>
-            <span className="stat-value">{stats.todayLogs?.toLocaleString() || 0}</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>Recorded since midnight</span>
+          <div className="metric-card-footer">
+            <span>All-time audit records</span>
           </div>
         </div>
 
-        <div className="stat-card">
-          <div className="stat-icon" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#fbbf24' }}>
-            <ShoppingCart size={22} />
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Today's Activities</span>
+            <div className="metric-card-icon" style={{ background: 'rgba(16, 185, 129, 0.12)', color: '#34d399' }}>
+              <Clock size={16} />
+            </div>
           </div>
-          <div className="stat-info">
-            <span className="stat-label">Orders & Payments</span>
-            <span className="stat-value">
-              {((stats.categories?.ORDER || 0) + (stats.categories?.PAYMENT || 0)).toLocaleString()}
-            </span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>Commerce transactions</span>
+          <div className="metric-card-value">
+            {stats.todayLogs?.toLocaleString() || 0}
+          </div>
+          <div className="metric-card-footer">
+            <span>Recorded since midnight</span>
           </div>
         </div>
 
-        <div className="stat-card">
-          <div className="stat-icon" style={{ background: 'rgba(139, 92, 246, 0.15)', color: '#a78bfa' }}>
-            <MessageSquare size={22} />
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">Orders & Payments</span>
+            <div className="metric-card-icon" style={{ background: 'rgba(245, 158, 11, 0.12)', color: '#fbbf24' }}>
+              <ShoppingCart size={16} />
+            </div>
           </div>
-          <div className="stat-info">
-            <span className="stat-label">SMS & Communications</span>
-            <span className="stat-value">{stats.categories?.SMS?.toLocaleString() || 0}</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>SMS gateway dispatches</span>
+          <div className="metric-card-value">
+            {((stats.categories?.ORDER || 0) + (stats.categories?.PAYMENT || 0)).toLocaleString()}
+          </div>
+          <div className="metric-card-footer">
+            <span>Commerce transactions</span>
+          </div>
+        </div>
+
+        <div className="metric-card">
+          <div className="metric-card-header">
+            <span className="metric-card-label">SMS Dispatches</span>
+            <div className="metric-card-icon" style={{ background: 'rgba(139, 92, 246, 0.12)', color: '#a78bfa' }}>
+              <MessageSquare size={16} />
+            </div>
+          </div>
+          <div className="metric-card-value">
+            {stats.categories?.SMS?.toLocaleString() || 0}
+          </div>
+          <div className="metric-card-footer">
+            <span>SMS gateway notifications</span>
           </div>
         </div>
       </div>

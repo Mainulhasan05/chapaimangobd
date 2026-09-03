@@ -29,8 +29,16 @@ export const getOrders = async (req, res, next) => {
     // Date range filter
     if (startDate || endDate) {
       query.orderDate = {};
-      if (startDate) query.orderDate.$gte = new Date(startDate);
-      if (endDate) query.orderDate.$lte = new Date(endDate);
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        query.orderDate.$gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        query.orderDate.$lte = end;
+      }
     }
 
     const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
@@ -435,6 +443,99 @@ export const addOrderPayment = async (req, res, next) => {
     res.status(201).json({
       success: true,
       data: { order, payment },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get date-wise order summary (counts, sales amount, collections, dues)
+// @route   GET /api/orders/daily-summary
+export const getDailySummary = async (req, res, next) => {
+  try {
+    const { startDate, endDate, status, paymentStatus } = req.query;
+
+    const match = {};
+
+    if (status) match.status = status;
+    if (paymentStatus) match.paymentStatus = paymentStatus;
+
+    if (startDate || endDate) {
+      match.orderDate = {};
+      if (startDate) {
+        const start = new Date(startDate);
+        start.setHours(0, 0, 0, 0);
+        match.orderDate.$gte = start;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        match.orderDate.$lte = end;
+      }
+    }
+
+    const summary = await Order.aggregate([
+      { $match: match },
+      {
+        $group: {
+          _id: {
+            $dateToString: {
+              format: '%Y-%m-%d',
+              date: { $ifNull: ['$orderDate', '$createdAt'] },
+              timezone: '+06:00',
+            },
+          },
+          orderCount: { $sum: 1 },
+          totalAmount: { $sum: '$totalBill' },
+          totalPaid: { $sum: '$paidAmount' },
+          totalDue: { $sum: '$orderDue' },
+          statuses: { $push: '$status' },
+          paymentStatuses: { $push: '$paymentStatus' },
+        },
+      },
+      { $sort: { _id: -1 } },
+    ]);
+
+    const totals = summary.reduce(
+      (acc, day) => {
+        acc.totalOrders += day.orderCount;
+        acc.totalAmount += day.totalAmount;
+        acc.totalPaid += day.totalPaid;
+        acc.totalDue += day.totalDue;
+        return acc;
+      },
+      { totalOrders: 0, totalAmount: 0, totalPaid: 0, totalDue: 0 }
+    );
+
+    const days = summary.map((day) => {
+      const statusCounts = {};
+      day.statuses.forEach((st) => {
+        statusCounts[st] = (statusCounts[st] || 0) + 1;
+      });
+
+      const paymentCounts = {};
+      day.paymentStatuses.forEach((ps) => {
+        paymentCounts[ps] = (paymentCounts[ps] || 0) + 1;
+      });
+
+      return {
+        date: day._id,
+        orderCount: day.orderCount,
+        totalAmount: day.totalAmount,
+        totalPaid: day.totalPaid,
+        totalDue: day.totalDue,
+        avgOrderValue: day.orderCount > 0 ? Math.round(day.totalAmount / day.orderCount) : 0,
+        statusCounts,
+        paymentCounts,
+      };
+    });
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totals,
+        days,
+      },
     });
   } catch (error) {
     next(error);

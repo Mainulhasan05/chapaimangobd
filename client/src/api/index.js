@@ -60,6 +60,7 @@ export const customerAPI = {
   update: (id, data) => api.put(`/customers/${id}`, data),
   getLedger: (id, params) => api.get(`/customers/${id}/ledger`, { params }),
   recordPayment: (id, data) => api.post(`/customers/${id}/payment`, data),
+  delete: (id, params) => api.delete(`/customers/${id}`, { params }),
 };
 
 // ============================================
@@ -72,6 +73,7 @@ export const orderAPI = {
   update: (id, data) => api.put(`/orders/${id}`, data),
   delete: (id) => api.delete(`/orders/${id}`),
   addPayment: (id, data) => api.post(`/orders/${id}/payment`, data),
+  getDailySummary: (params) => api.get('/orders/daily-summary', { params }),
 };
 
 // ============================================

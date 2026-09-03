@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { customerAPI } from '../api';
 import {
   ArrowLeft,
@@ -11,7 +12,11 @@ import {
   TrendingUp,
   AlertCircle,
   MessageSquare,
+  Trash2,
+  AlertTriangle,
+  X,
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 const formatDate = (d) =>
   new Date(d).toLocaleDateString('en-BD', {
@@ -25,6 +30,8 @@ const formatDate = (d) =>
 const CustomerDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   const { data: customer, isLoading: customerLoading } = useQuery({
     queryKey: ['customer', id],
@@ -34,6 +41,17 @@ const CustomerDetailPage = () => {
   const { data: ledgerData, isLoading: ledgerLoading } = useQuery({
     queryKey: ['customer-ledger', id],
     queryFn: () => customerAPI.getLedger(id).then((r) => r.data.data),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: () => customerAPI.delete(id, { cascade: true }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+      toast.success('Customer deleted successfully');
+      navigate('/customers');
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to delete customer'),
   });
 
   if (customerLoading) {
@@ -78,6 +96,14 @@ const CustomerDetailPage = () => {
             </div>
           </div>
         </div>
+        <button
+          type="button"
+          className="btn btn-secondary btn-sm"
+          onClick={() => setShowDeleteModal(true)}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+        >
+          <Trash2 size={15} /> Delete Customer
+        </button>
       </div>
 
       {/* Summary Cards */}
@@ -206,6 +232,78 @@ const CustomerDetailPage = () => {
           </div>
         )}
       </div>
+
+      {/* Delete Customer Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="modal-overlay" onClick={() => !deleteMutation.isPending && setShowDeleteModal(false)}>
+          <div className="modal animate-slide-up" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
+            <div className="modal-header" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+                <div style={{
+                  width: 38, height: 38, borderRadius: 'var(--radius-md)',
+                  background: 'var(--danger-light)', color: 'var(--danger)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center'
+                }}>
+                  <AlertTriangle size={20} />
+                </div>
+                <h3 className="modal-title" style={{ color: 'var(--danger)' }}>Delete Customer</h3>
+              </div>
+              <button
+                className="btn btn-ghost btn-icon btn-sm"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deleteMutation.isPending}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ paddingTop: 'var(--space-md)' }}>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-primary)', marginBottom: 'var(--space-md)', lineHeight: 1.5 }}>
+                Are you sure you want to delete <strong>{customer.name}</strong> ({customer.phone})?
+              </p>
+
+              {(customer.orderCount > 0 || customer.totalDue > 0) && (
+                <div style={{
+                  background: 'rgba(239, 68, 68, 0.08)',
+                  border: '1px solid rgba(239, 68, 68, 0.2)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '10px 14px',
+                  fontSize: '0.8125rem',
+                  color: 'var(--text-secondary)',
+                  marginBottom: 'var(--space-md)',
+                }}>
+                  <div style={{ fontWeight: 600, color: 'var(--danger)', marginBottom: 2 }}>Warning:</div>
+                  This customer has <strong>{customer.orderCount || 0} order(s)</strong> and <strong>৳{(customer.totalDue || 0).toLocaleString()} standing due</strong>. Deleting this customer will permanently delete their profile and associated order records.
+                </div>
+              )}
+
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="modal-footer" style={{ borderTop: 'none', paddingTop: 0 }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deleteMutation.isPending}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => deleteMutation.mutate()}
+                disabled={deleteMutation.isPending}
+              >
+                {deleteMutation.isPending && <div className="spinner" />}
+                <Trash2 size={15} /> Delete Customer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
