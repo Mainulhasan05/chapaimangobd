@@ -545,42 +545,42 @@ const OrdersPage = () => {
                 </div>
 
                 {/* Actions Row */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-xs)', marginTop: 4, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+                <div className="order-card-actions">
                   <button
+                    type="button"
                     className="btn btn-secondary btn-sm"
                     onClick={() => setShowDetailsModal(order)}
-                    style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
                   >
                     <Eye size={13} /> Details
                   </button>
                   <button
+                    type="button"
                     className="btn btn-secondary btn-sm"
                     onClick={() => setShowStickerModal(order)}
-                    style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
                   >
                     <Printer size={13} /> Sticker
                   </button>
                   <button
+                    type="button"
                     className="btn btn-secondary btn-sm"
                     onClick={() => handleOpenTrackingSms(order)}
-                    style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
                   >
                     <Send size={13} /> SMS
                   </button>
                   <button
+                    type="button"
                     className="btn btn-ghost btn-sm"
                     onClick={() => handleOpenEditOrder(order)}
-                    style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '4px 8px' }}
                   >
                     <Edit2 size={13} /> Edit
                   </button>
                   {order.orderDue > 0 && (
                     <button
-                      className="btn btn-primary btn-sm"
+                      type="button"
+                      className="btn btn-primary btn-sm order-due-btn"
                       onClick={() => setShowPaymentModal(order)}
-                      style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginTop: 4 }}
                     >
-                      <DollarSign size={14} /> Collect Due (৳{order.orderDue?.toLocaleString()})
+                      <DollarSign size={14} /> Collect Due • ৳{order.orderDue?.toLocaleString()}
                     </button>
                   )}
                 </div>
@@ -1443,6 +1443,43 @@ const OrdersPage = () => {
             flex-direction: column;
             gap: var(--space-md);
           }
+        }
+
+        .order-card-actions {
+          display: grid;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 6px;
+          margin-top: 6px;
+          padding-top: 8px;
+          border-top: 1px solid var(--border);
+        }
+
+        @media (max-width: 520px) {
+          .order-card-actions {
+            grid-template-columns: 1fr 1fr;
+          }
+        }
+
+        .order-card-actions button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 4px;
+          padding: 7px 6px;
+          font-size: 0.75rem;
+          min-height: 34px;
+          width: 100%;
+          white-space: nowrap;
+        }
+
+        .order-card-actions .order-due-btn {
+          grid-column: 1 / -1;
+          font-weight: 600;
+          font-size: 0.8125rem;
+          min-height: 36px;
+          background: var(--accent-gradient);
+          color: white;
+          box-shadow: 0 2px 8px rgba(108, 92, 231, 0.3);
         }
 
         /* Print styles for thermal & A4 crate stickers */

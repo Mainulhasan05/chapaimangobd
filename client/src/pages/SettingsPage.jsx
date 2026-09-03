@@ -191,7 +191,7 @@ const SettingsPage = () => {
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-sm)', marginBottom: 'var(--space-md)' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-sm)' }}>
+            <div className="settings-meta-grid">
               <div style={{ padding: 'var(--space-md)', background: 'var(--bg-glass)', borderRadius: 'var(--radius-md)' }}>
                 <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginBottom: 2 }}>Sender ID</div>
                 <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>
@@ -219,6 +219,19 @@ const SettingsPage = () => {
           </div>
         </div>
       </div>
+
+      <style>{`
+        .settings-meta-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: var(--space-sm);
+        }
+        @media (max-width: 520px) {
+          .settings-meta-grid {
+            grid-template-columns: 1fr !important;
+          }
+        }
+      `}</style>
     </div>
   );
 };

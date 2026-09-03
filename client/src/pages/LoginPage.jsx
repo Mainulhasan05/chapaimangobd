@@ -649,6 +649,14 @@ const LoginPage = () => {
         .step-line.active {
           background: var(--accent-primary);
         }
+        @media (max-width: 480px) {
+          .login-card {
+            padding: var(--space-lg);
+          }
+          .login-title {
+            font-size: 1.25rem;
+          }
+        }
       `}</style>
     </div>
   );

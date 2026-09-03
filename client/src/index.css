@@ -811,15 +811,29 @@ select option:checked,
     grid-template-columns: 1fr;
   }
 
+  .card {
+    padding: var(--space-md);
+  }
+
   .page-header {
     flex-direction: column;
     align-items: flex-start;
+    gap: var(--space-sm);
   }
 
   .modal {
-    max-width: 100%;
-    margin: var(--space-md);
-    max-height: 85vh;
+    max-width: calc(100vw - 24px);
+    margin: 12px;
+    max-height: 88vh;
+  }
+
+  .modal-header,
+  .modal-footer {
+    padding: var(--space-md);
+  }
+
+  .modal-body {
+    padding: var(--space-md);
   }
 
   .stat-card-value {
@@ -827,17 +841,37 @@ select option:checked,
   }
 
   .table th, .table td {
-    padding: 10px 12px;
+    padding: 8px 10px;
+    font-size: 0.8125rem;
   }
 
+  .table-container {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Responsive Buttons: Do NOT force 100% width globally */
   .btn {
-    padding: 10px 16px;
-    width: 100%;
+    width: auto;
+    min-height: 36px;
+  }
+
+  .btn-sm {
+    padding: 6px 12px;
+    font-size: 0.8125rem;
+    min-height: 32px;
   }
 
   .btn-icon {
-    width: 36px;
-    padding: 8px;
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    padding: 8px !important;
+    flex-shrink: 0;
+  }
+
+  .btn-block-mobile {
+    width: 100% !important;
+    justify-content: center;
   }
 }
 

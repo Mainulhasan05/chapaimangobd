@@ -274,7 +274,7 @@ const ImportPage = () => {
 
       {/* Upload Zone */}
       {!previewData && !importResult && (
-        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 'var(--space-lg)' }}>
+        <div className="import-grid">
           {/* Dropzone */}
           <div
             className={`card ${isDragging ? 'dragging' : ''}`}
@@ -516,8 +516,13 @@ const ImportPage = () => {
       )}
 
       <style>{`
+        .import-grid {
+          display: grid;
+          grid-template-columns: 2fr 1fr;
+          gap: var(--space-lg);
+        }
         @media (max-width: 768px) {
-          .page > div[style*="grid-template-columns: 2fr 1fr"] {
+          .import-grid {
             grid-template-columns: 1fr !important;
           }
         }

@@ -81,7 +81,7 @@ const CustomerDetailPage = () => {
       </div>
 
       {/* Summary Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 'var(--space-md)', marginBottom: 'var(--space-xl)' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 'var(--space-md)', marginBottom: 'var(--space-xl)' }}>
         <div className="stat-card stat-sales">
           <div className="stat-card-icon"><TrendingUp size={20} /></div>
           <div className="stat-card-label">Total Purchases</div>

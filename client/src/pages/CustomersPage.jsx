@@ -334,28 +334,28 @@ const CustomersPage = () => {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: 'var(--space-sm)', marginTop: 4, paddingTop: 6, borderTop: '1px solid var(--border)' }}>
+                <div className="customer-card-actions">
                   <button
+                    type="button"
                     className="btn btn-secondary btn-sm"
                     onClick={() => navigate(`/customers/${c._id}`)}
-                    style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
                   >
                     <Eye size={14} /> View Ledger
                   </button>
                   <button
+                    type="button"
                     className="btn btn-ghost btn-sm"
                     onClick={() => openEdit(c)}
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
                   >
                     <Edit2 size={14} /> Edit
                   </button>
                   {c.totalDue > 0 && (
                     <button
-                      className="btn btn-primary btn-sm"
+                      type="button"
+                      className="btn btn-primary btn-sm customer-pay-btn"
                       onClick={() => setShowPaymentModal(c)}
-                      style={{ flex: 1, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4 }}
                     >
-                      <DollarSign size={14} /> Pay Due
+                      <DollarSign size={15} /> Pay Due • ৳{(c.totalDue || 0).toLocaleString()}
                     </button>
                   )}
                 </div>
@@ -602,6 +602,49 @@ const CustomersPage = () => {
             display: flex !important;
             flex-direction: column;
             gap: var(--space-md);
+          }
+        }
+
+        .customer-card-actions {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 8px;
+          margin-top: 6px;
+          padding-top: 8px;
+          border-top: 1px solid var(--border);
+        }
+
+        .customer-card-actions button {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          gap: 6px;
+          padding: 8px 10px;
+          font-size: 0.8125rem;
+          min-height: 36px;
+          width: 100%;
+          white-space: nowrap;
+        }
+
+        .customer-card-actions .customer-pay-btn {
+          grid-column: 1 / -1;
+          font-weight: 600;
+          font-size: 0.875rem;
+          background: var(--accent-gradient);
+          color: white;
+          box-shadow: 0 2px 10px rgba(108, 92, 231, 0.3);
+          min-height: 38px;
+        }
+
+        @media (max-width: 600px) {
+          .page-header > div:last-child {
+            width: 100%;
+            display: flex;
+            gap: 8px;
+          }
+          .page-header > div:last-child .btn {
+            flex: 1;
+            justify-content: center;
           }
         }
       `}</style>

@@ -359,7 +359,7 @@ const SMSPage = () => {
       {/* Real-time SMS Send Count & Tracking Metrics Grid */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
         gap: 'var(--space-md)',
         marginBottom: 'var(--space-lg)',
       }}>
@@ -435,7 +435,7 @@ const SMSPage = () => {
       </div>
 
       {activeTab === 'compose' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-lg)' }}>
+        <div className="sms-compose-grid">
           {/* Left: Template + Preview */}
           <div>
             <div className="card" style={{ marginBottom: 'var(--space-lg)' }}>
@@ -1285,9 +1285,21 @@ const SMSPage = () => {
       )}
 
       <style>{`
+        .sms-compose-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: var(--space-lg);
+        }
         @media (max-width: 768px) {
-          .page > div[style*="grid-template-columns: 1fr 1fr"] {
+          .sms-compose-grid {
             grid-template-columns: 1fr !important;
+          }
+          .page-header > div:last-child {
+            width: 100%;
+          }
+          .page-header > div:last-child .btn {
+            width: 100%;
+            justify-content: center;
           }
         }
       `}</style>

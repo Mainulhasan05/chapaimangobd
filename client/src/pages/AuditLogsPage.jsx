@@ -737,6 +737,12 @@ const AuditLogsPage = () => {
 
       {/* Responsive Styles */}
       <style>{`
+        .stats-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+          gap: var(--space-md);
+        }
+
         .desktop-audit-table {
           display: block;
         }
@@ -754,6 +760,10 @@ const AuditLogsPage = () => {
         }
 
         @media (max-width: 768px) {
+          .stats-grid {
+            grid-template-columns: 1fr 1fr !important;
+            gap: var(--space-sm);
+          }
           .desktop-audit-table {
             display: none !important;
           }
