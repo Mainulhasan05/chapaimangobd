@@ -101,9 +101,18 @@ const CustomerDetailPage = () => {
           type="button"
           className="btn btn-secondary btn-sm"
           onClick={() => setShowDeleteModal(true)}
-          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: 'var(--danger)', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            color: 'var(--danger)',
+            background: 'rgba(239, 68, 68, 0.08)',
+            border: '1px solid rgba(239, 68, 68, 0.35)',
+            fontWeight: 600,
+            padding: '6px 14px',
+          }}
         >
-          <Trash2 size={15} /> Delete Customer
+          <Trash2 size={16} /> Delete Customer
         </button>
       </div>
 
@@ -232,6 +241,37 @@ const CustomerDetailPage = () => {
             ))}
           </div>
         )}
+      </div>
+
+      {/* Customer Danger Zone */}
+      <div className="card" style={{ marginTop: 'var(--space-xl)', border: '1px solid rgba(239, 68, 68, 0.25)', background: 'rgba(239, 68, 68, 0.03)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-md)' }}>
+          <div>
+            <h4 style={{ color: 'var(--danger)', margin: 0, fontSize: '0.9375rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
+              <Trash2 size={16} /> Danger Zone: Delete Customer Profile
+            </h4>
+            <p style={{ margin: '4px 0 0', fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+              Permanently remove {customer.name} ({customer.phone}) and clear associated profile.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            onClick={() => setShowDeleteModal(true)}
+            style={{
+              color: 'var(--danger)',
+              background: 'rgba(239, 68, 68, 0.1)',
+              borderColor: 'rgba(239, 68, 68, 0.4)',
+              fontWeight: 600,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              padding: '6px 14px',
+            }}
+          >
+            <Trash2 size={15} /> Delete Customer
+          </button>
+        </div>
       </div>
 
       {/* Soft Confirmation Modal for Customer Deletion */}

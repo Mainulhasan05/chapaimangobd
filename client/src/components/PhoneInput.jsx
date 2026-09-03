@@ -49,68 +49,56 @@ const PhoneInput = ({
 
   return (
     <div className="form-group" style={{ marginBottom: 'var(--space-md)' }}>
+      {/* Label Row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-        <label className="form-label" htmlFor={id || name} style={{ marginBottom: 0, display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-          <Phone size={13} style={{ color: 'var(--accent-secondary)' }} />
-          <span>{label} {required && '*'}</span>
+        <label
+          className="form-label"
+          htmlFor={id || name}
+          style={{ marginBottom: 0, display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
+        >
+          <Phone size={14} style={{ color: 'var(--accent-secondary)' }} />
+          <span>{label} {required && <span style={{ color: 'var(--danger)' }}>*</span>}</span>
         </label>
 
-        {/* 11-Digit Live Indicator Badge */}
-        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-          {len === 0 ? (
-            <span style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
-              {required ? '11 digits required' : '11 digits (optional)'}
-            </span>
-          ) : !startsWith01 ? (
-            <span
-              style={{
-                fontSize: '0.6875rem',
-                color: 'var(--danger)',
-                background: 'rgba(239, 68, 68, 0.1)',
-                padding: '1px 6px',
-                borderRadius: 'var(--radius-sm)',
-                fontWeight: 500,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 3,
-              }}
-            >
-              <AlertCircle size={10} /> Must start with 01
-            </span>
-          ) : isValid ? (
-            <span
-              style={{
-                fontSize: '0.6875rem',
-                color: '#10b981',
-                background: 'rgba(16, 185, 129, 0.12)',
-                padding: '1px 6px',
-                borderRadius: 'var(--radius-sm)',
-                fontWeight: 600,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 3,
-              }}
-            >
-              <CheckCircle2 size={11} /> 11/11 Valid BD Number
-            </span>
-          ) : (
-            <span
-              style={{
-                fontSize: '0.6875rem',
-                color: '#f59e0b',
-                background: 'rgba(245, 158, 11, 0.1)',
-                padding: '1px 6px',
-                borderRadius: 'var(--radius-sm)',
-                fontWeight: 500,
-              }}
-            >
-              {len}/11 digits
-            </span>
-          )}
-        </div>
+        {/* Live Top Badge */}
+        <span
+          style={{
+            fontSize: '0.6875rem',
+            fontWeight: 700,
+            padding: '2px 7px',
+            borderRadius: 'var(--radius-sm)',
+            letterSpacing: '0.02em',
+            background: isValid
+              ? 'rgba(16, 185, 129, 0.12)'
+              : !startsWith01 && len >= 2
+              ? 'rgba(239, 68, 68, 0.1)'
+              : len > 0
+              ? 'rgba(245, 158, 11, 0.12)'
+              : 'var(--bg-card)',
+            color: isValid
+              ? '#10b981'
+              : !startsWith01 && len >= 2
+              ? '#ef4444'
+              : len > 0
+              ? '#f59e0b'
+              : 'var(--text-tertiary)',
+            border: `1px solid ${
+              isValid
+                ? 'rgba(16, 185, 129, 0.3)'
+                : !startsWith01 && len >= 2
+                ? 'rgba(239, 68, 68, 0.3)'
+                : len > 0
+                ? 'rgba(245, 158, 11, 0.3)'
+                : 'var(--border)'
+            }`,
+          }}
+        >
+          {len === 0 ? '0 / 11 Digits' : `${len} / 11 Digits`}
+        </span>
       </div>
 
-      <div style={{ position: 'relative' }}>
+      {/* Input Box with Internal In-Field Pill */}
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
         <input
           id={id || name}
           name={name}
@@ -125,11 +113,172 @@ const PhoneInput = ({
           autoFocus={autoFocus}
           style={{
             fontFamily: 'var(--font-mono, monospace)',
-            letterSpacing: '0.04em',
-            borderColor: isValid ? 'rgba(16, 185, 129, 0.5)' : undefined,
-            boxShadow: isValid ? '0 0 0 1px rgba(16, 185, 129, 0.2)' : undefined,
+            letterSpacing: '0.05em',
+            paddingRight: 105,
+            fontSize: '0.9375rem',
+            borderColor: isValid
+              ? '#10b981'
+              : !startsWith01 && len >= 2
+              ? '#ef4444'
+              : len > 0
+              ? 'rgba(245, 158, 11, 0.6)'
+              : undefined,
+            boxShadow: isValid
+              ? '0 0 0 2px rgba(16, 185, 129, 0.15)'
+              : !startsWith01 && len >= 2
+              ? '0 0 0 2px rgba(239, 68, 68, 0.15)'
+              : undefined,
           }}
         />
+
+        {/* In-field Right Indicator Pill */}
+        <div
+          style={{
+            position: 'absolute',
+            right: 8,
+            top: '50%',
+            transform: 'translateY(-50%)',
+            pointerEvents: 'none',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          {len === 0 ? (
+            <span
+              style={{
+                fontSize: '0.6875rem',
+                color: 'var(--text-tertiary)',
+                background: 'var(--bg-card)',
+                padding: '2px 6px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid var(--border)',
+                fontWeight: 600,
+              }}
+            >
+              0/11
+            </span>
+          ) : !startsWith01 ? (
+            <span
+              style={{
+                fontSize: '0.6875rem',
+                color: '#ef4444',
+                background: 'rgba(239, 68, 68, 0.12)',
+                padding: '2px 6px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 3,
+              }}
+            >
+              <AlertCircle size={10} /> 01X only
+            </span>
+          ) : isValid ? (
+            <span
+              style={{
+                fontSize: '0.6875rem',
+                color: '#10b981',
+                background: 'rgba(16, 185, 129, 0.15)',
+                padding: '2px 6px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                fontWeight: 700,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 3,
+              }}
+            >
+              <CheckCircle2 size={11} /> 11/11 ✓
+            </span>
+          ) : (
+            <span
+              style={{
+                fontSize: '0.6875rem',
+                color: '#f59e0b',
+                background: 'rgba(245, 158, 11, 0.15)',
+                padding: '2px 6px',
+                borderRadius: 'var(--radius-sm)',
+                border: '1px solid rgba(245, 158, 11, 0.35)',
+                fontWeight: 700,
+              }}
+            >
+              {len}/11 digits
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Visual Progress Bar (0 to 11 digits) */}
+      <div
+        style={{
+          width: '100%',
+          height: 3,
+          background: 'var(--border)',
+          borderRadius: 2,
+          overflow: 'hidden',
+          marginTop: 6,
+          marginBottom: 4,
+        }}
+      >
+        <div
+          style={{
+            width: `${Math.min(100, (len / 11) * 100)}%`,
+            height: '100%',
+            background: isValid
+              ? '#10b981'
+              : !startsWith01 && len >= 2
+              ? '#ef4444'
+              : '#f59e0b',
+            transition: 'width 0.15s ease, background-color 0.15s ease',
+          }}
+        />
+      </div>
+
+      {/* Bottom Live Explanatory Text */}
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          fontSize: '0.75rem',
+          fontWeight: 500,
+        }}
+      >
+        <span
+          style={{
+            color: isValid
+              ? '#10b981'
+              : !startsWith01 && len >= 2
+              ? '#ef4444'
+              : len > 0
+              ? '#f59e0b'
+              : 'var(--text-tertiary)',
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 4,
+          }}
+        >
+          {len === 0 ? (
+            required ? '11 digits required (e.g. 017XXXXXXXX)' : '11 digits optional'
+          ) : !startsWith01 ? (
+            <>Must start with 01 (currently: {cleanVal.slice(0, 2)})</>
+          ) : isValid ? (
+            <>✓ 11 of 11 digits typed (Valid Bangladeshi Phone)</>
+          ) : (
+            <>{len} of 11 digits typed ({11 - len} remaining)</>
+          )}
+        </span>
+
+        <span
+          style={{
+            fontSize: '0.6875rem',
+            color: isValid ? '#10b981' : 'var(--text-tertiary)',
+            fontWeight: 600,
+          }}
+        >
+          {isValid ? 'VALID' : `${len}/11`}
+        </span>
       </div>
 
       {helperText && (

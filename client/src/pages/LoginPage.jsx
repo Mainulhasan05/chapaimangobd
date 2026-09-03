@@ -15,6 +15,7 @@ import {
   RotateCw,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import PhoneInput from '../components/PhoneInput';
 
 const LoginPage = () => {
   // Mode: 'login' | 'register' | 'forgot'
@@ -219,34 +220,15 @@ const LoginPage = () => {
               {/* STEP 1: Phone Input */}
               {forgotStep === 1 && (
                 <form onSubmit={handleSendOtp} className="login-form">
-                  <div className="form-group">
-                    <label className="form-label">Registered Phone Number</label>
-                    <div style={{ position: 'relative' }}>
-                      <input
-                        type="text"
-                        className="form-input"
-                        placeholder="e.g. 01711111111"
-                        value={forgotPhone}
-                        onChange={(e) => setForgotPhone(e.target.value)}
-                        required
-                        autoFocus
-                        style={{ paddingLeft: 40 }}
-                      />
-                      <Phone
-                        size={18}
-                        style={{
-                          position: 'absolute',
-                          left: 12,
-                          top: '50%',
-                          transform: 'translateY(-50%)',
-                          color: 'var(--text-tertiary)',
-                        }}
-                      />
-                    </div>
-                    <small style={{ color: 'var(--text-tertiary)', fontSize: '0.75rem', marginTop: 4, display: 'block' }}>
-                      We will send a 6-digit verification code via SMS to this number.
-                    </small>
-                  </div>
+                  <PhoneInput
+                    label="Registered Admin Phone Number"
+                    value={forgotPhone}
+                    onChange={setForgotPhone}
+                    required
+                    autoFocus
+                    placeholder="01722883710"
+                    helperText="We will send a 6-digit verification code via SMS to this number."
+                  />
 
                   <button
                     type="submit"
@@ -442,7 +424,7 @@ const LoginPage = () => {
                   <input
                     type="text"
                     className="form-input"
-                    placeholder="admin@chapaimango.bd or 01711111111"
+                    placeholder="admin@chapaimango.bd or 01722883710"
                     value={form.email}
                     onChange={(e) => setForm({ ...form, email: e.target.value })}
                     required

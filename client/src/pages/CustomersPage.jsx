@@ -245,23 +245,28 @@ const CustomersPage = () => {
                       </span>
                     </td>
                     <td className="customers-actions-cell">
-                      <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                      <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
                         <button
-                          className="btn btn-ghost btn-icon btn-sm"
+                          type="button"
+                          className="btn btn-ghost btn-sm"
                           title="View Details"
                           onClick={() => navigate(`/customers/${c._id}`)}
+                          style={{ padding: '4px 8px', fontSize: '0.75rem', height: 28 }}
                         >
-                          <Eye size={16} />
+                          <Eye size={14} /> Ledger
                         </button>
                         <button
-                          className="btn btn-ghost btn-icon btn-sm"
+                          type="button"
+                          className="btn btn-ghost btn-sm"
                           title="Edit"
                           onClick={() => openEdit(c)}
+                          style={{ padding: '4px 8px', fontSize: '0.75rem', height: 28 }}
                         >
-                          <Edit2 size={16} />
+                          <Edit2 size={14} /> Edit
                         </button>
                         {c.totalDue > 0 && (
                           <button
+                            type="button"
                             className="btn btn-primary btn-sm"
                             title="Record Payment"
                             onClick={() => setShowPaymentModal(c)}
@@ -271,12 +276,24 @@ const CustomersPage = () => {
                           </button>
                         )}
                         <button
-                          className="btn btn-ghost btn-icon btn-sm text-danger"
+                          type="button"
+                          className="btn btn-ghost btn-sm text-danger"
                           title="Delete Customer"
                           onClick={() => setCustomerToDelete(c)}
-                          style={{ color: 'var(--danger)' }}
+                          style={{
+                            color: 'var(--danger)',
+                            background: 'rgba(239, 68, 68, 0.08)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            padding: '4px 10px',
+                            fontSize: '0.75rem',
+                            height: 28,
+                            fontWeight: 600,
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                          }}
                         >
-                          <Trash2 size={15} />
+                          <Trash2 size={14} /> Delete
                         </button>
                       </div>
                     </td>
@@ -517,18 +534,43 @@ const CustomersPage = () => {
                   />
                 </div>
               </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={closeModal}>
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={createMutation.isPending || updateMutation.isPending}
-                >
-                  {(createMutation.isPending || updateMutation.isPending) && <div className="spinner" />}
-                  {editingCustomer ? 'Update Customer' : 'Add Customer'}
-                </button>
+              <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                {editingCustomer ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm text-danger"
+                    onClick={() => {
+                      const target = editingCustomer;
+                      closeModal();
+                      setCustomerToDelete(target);
+                    }}
+                    style={{
+                      color: 'var(--danger)',
+                      background: 'rgba(239, 68, 68, 0.08)',
+                      border: '1px solid rgba(239, 68, 68, 0.3)',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 6,
+                      fontWeight: 600,
+                      padding: '6px 12px',
+                    }}
+                  >
+                    <Trash2 size={15} /> Delete Customer
+                  </button>
+                ) : <div />}
+                <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+                  <button type="button" className="btn btn-secondary" onClick={closeModal}>
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={createMutation.isPending || updateMutation.isPending}
+                  >
+                    {(createMutation.isPending || updateMutation.isPending) && <div className="spinner" />}
+                    {editingCustomer ? 'Update Customer' : 'Add Customer'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -650,6 +692,7 @@ const CustomersPage = () => {
           background: var(--bg-card);
           z-index: 2;
           box-shadow: -4px 0 8px rgba(0, 0, 0, 0.2);
+          min-width: 270px;
         }
 
         .customers-actions-cell {
@@ -658,6 +701,7 @@ const CustomersPage = () => {
           background: var(--bg-card);
           z-index: 2;
           box-shadow: -4px 0 8px rgba(0, 0, 0, 0.2);
+          min-width: 270px;
         }
 
         @media (max-width: 768px) {

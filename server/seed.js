@@ -25,11 +25,11 @@ const seed = async () => {
     const admin = await User.create({
       name: 'Chapai Mango Admin',
       email: 'admin@chapaimango.bd',
-      phone: '01711111111',
+      phone: '01722883710',
       password: 'admin123',
       role: 'admin',
     });
-    console.log('👤 Admin created: admin@chapaimango.bd (Phone: 01711111111) / admin123');
+    console.log('👤 Admin created: admin@chapaimango.bd (Phone: 01722883710) / admin123');
 
     // Create customers across Bangladesh with opening balances
     const customersData = [
@@ -125,7 +125,7 @@ const seed = async () => {
 
     console.log('📦 Created 20 sample mango orders with payments');
     console.log('\n✨ Seed complete! You can now login with:');
-    console.log('   Email / Phone: admin@chapaimango.bd or 01711111111');
+    console.log('   Email / Phone: admin@chapaimango.bd or 01722883710');
     console.log('   Password: admin123\n');
 
     process.exit(0);
