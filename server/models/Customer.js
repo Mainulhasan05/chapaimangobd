@@ -60,6 +60,14 @@ const customerSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    totalSmsSent: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    lastSmsSentAt: {
+      type: Date,
+    },
     notes: {
       type: String,
       trim: true,

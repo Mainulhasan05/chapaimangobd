@@ -165,6 +165,24 @@ export const sendBulkSms = async (req, res, next) => {
       status,
     });
 
+    // Update totalSmsSent and lastSmsSentAt on successfully contacted customers
+    const successfullyContactedCustomerIds = [];
+    sendResults.forEach((r, idx) => {
+      if (r.status === 'sent' && customers[idx]?._id) {
+        successfullyContactedCustomerIds.push(customers[idx]._id);
+      }
+    });
+
+    if (successfullyContactedCustomerIds.length > 0) {
+      await Customer.updateMany(
+        { _id: { $in: successfullyContactedCustomerIds } },
+        {
+          $inc: { totalSmsSent: 1 },
+          $set: { lastSmsSentAt: new Date() },
+        }
+      ).catch((err) => console.warn('[SMS] Customer stats update warning:', err.message));
+    }
+
     await createAuditLog({
       req,
       action: 'SMS_BROADCAST',
@@ -260,11 +278,36 @@ export const sendTestSms = async (req, res, next) => {
       status: 'sent',
     });
 
+    // Link customer record if phone matches
+    const cleanPhone = phone.trim().replace(/^(\+88|88)/, '');
+    const matchedCustomer = await Customer.findOne({
+      $or: [
+        { phone },
+        { phone: cleanPhone },
+        { phone: '0' + cleanPhone.replace(/^0+/, '') },
+      ],
+    });
+
+    if (matchedCustomer) {
+      testLog.recipients[0].customer = matchedCustomer._id;
+      testLog.recipients[0].name = matchedCustomer.name;
+      testLog.resolvedTexts[0].name = matchedCustomer.name;
+      await testLog.save().catch(() => {});
+
+      await Customer.updateOne(
+        { _id: matchedCustomer._id },
+        {
+          $inc: { totalSmsSent: 1 },
+          $set: { lastSmsSentAt: new Date() },
+        }
+      ).catch((err) => console.warn('[SMS] Customer tracking error:', err.message));
+    }
+
     await createAuditLog({
       req,
       action: 'SMS_TEST',
       category: 'SMS',
-      description: `Dispatched test SMS to ${phone} via Automas gateway`,
+      description: `Dispatched test SMS to ${phone} via SMS Gateway`,
       details: { phone, message: finalMessage, credits: stats.credits },
     });
 
@@ -365,16 +408,33 @@ export const updateSmsConfig = async (req, res, next) => {
   }
 };
 
-// @desc    Get SMS history
+// @desc    Get SMS history with search and status filtering
 // @route   GET /api/sms/history
 export const getSmsHistory = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
+    const { page = 1, limit = 20, search, status } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
+    const query = {};
+    if (status && status !== 'all') {
+      query.status = status;
+    }
+
+    if (search && search.trim()) {
+      const searchRegex = new RegExp(search.trim(), 'i');
+      query.$or = [
+        { 'recipients.name': searchRegex },
+        { 'recipients.phone': searchRegex },
+        { 'resolvedTexts.name': searchRegex },
+        { 'resolvedTexts.phone': searchRegex },
+        { 'resolvedTexts.text': searchRegex },
+        { template: searchRegex },
+      ];
+    }
+
     const [logs, total] = await Promise.all([
-      SmsLog.find().sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)),
-      SmsLog.countDocuments(),
+      SmsLog.find(query).sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)),
+      SmsLog.countDocuments(query),
     ]);
 
     // Enrich logs with recipient names, token costs, and character counts
@@ -566,6 +626,80 @@ export const getSmsBalance = async (req, res, next) => {
         currency: typeof finalBalance === 'number' ? 'SMS Credits' : 'Credits',
         isLive,
         gateway: 'SMS Gateway',
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get aggregate SMS dispatch metrics & send count tracking
+// @route   GET /api/sms/stats
+export const getSmsStats = async (req, res, next) => {
+  try {
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [lifetimeStats, todayStats, monthStats, totalDispatches, customersContactedCount] = await Promise.all([
+      SmsLog.aggregate([
+        {
+          $group: {
+            _id: null,
+            totalSent: { $sum: '$totalSent' },
+            totalFailed: { $sum: '$totalFailed' },
+            totalCredits: { $sum: { $ifNull: ['$totalCredits', '$totalSent'] } },
+          },
+        },
+      ]),
+      SmsLog.aggregate([
+        { $match: { createdAt: { $gte: startOfToday } } },
+        {
+          $group: {
+            _id: null,
+            sentToday: { $sum: '$totalSent' },
+            failedToday: { $sum: '$totalFailed' },
+            creditsToday: { $sum: { $ifNull: ['$totalCredits', '$totalSent'] } },
+          },
+        },
+      ]),
+      SmsLog.aggregate([
+        { $match: { createdAt: { $gte: startOfMonth } } },
+        {
+          $group: {
+            _id: null,
+            sentThisMonth: { $sum: '$totalSent' },
+            creditsThisMonth: { $sum: { $ifNull: ['$totalCredits', '$totalSent'] } },
+          },
+        },
+      ]),
+      SmsLog.countDocuments(),
+      Customer.countDocuments({ totalSmsSent: { $gt: 0 } }),
+    ]);
+
+    const lifetime = lifetimeStats[0] || { totalSent: 0, totalFailed: 0, totalCredits: 0 };
+    const today = todayStats[0] || { sentToday: 0, failedToday: 0, creditsToday: 0 };
+    const month = monthStats[0] || { sentThisMonth: 0, creditsThisMonth: 0 };
+
+    const totalAttempts = lifetime.totalSent + lifetime.totalFailed;
+    const deliveryRate = totalAttempts > 0
+      ? Math.round((lifetime.totalSent / totalAttempts) * 1000) / 10
+      : 100;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        totalSent: lifetime.totalSent,
+        totalFailed: lifetime.totalFailed,
+        totalCredits: lifetime.totalCredits,
+        totalDispatches,
+        deliveryRate,
+        customersContactedCount,
+        sentToday: today.sentToday,
+        failedToday: today.failedToday || 0,
+        creditsToday: today.creditsToday,
+        sentThisMonth: month.sentThisMonth,
+        creditsThisMonth: month.creditsThisMonth,
       },
     });
   } catch (error) {

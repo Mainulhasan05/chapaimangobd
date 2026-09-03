@@ -86,6 +86,7 @@ export const smsAPI = {
   send: (data) => api.post('/sms/send', data),
   preview: (data) => api.post('/sms/preview', data),
   getHistory: (params) => api.get('/sms/history', { params }),
+  getStats: () => api.get('/sms/stats'),
   getConfig: () => api.get('/sms/config'),
   updateConfig: (data) => api.put('/sms/config', data),
   test: (data) => api.post('/sms/test', data),
