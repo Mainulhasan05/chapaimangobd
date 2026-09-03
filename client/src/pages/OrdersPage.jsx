@@ -33,6 +33,7 @@ import {
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import ConfirmModal from '../components/ConfirmModal';
+import PhoneInput, { isBDPhoneValid } from '../components/PhoneInput';
 
 const formatSummaryDate = (dateStr) => {
   if (!dateStr) return { formatted: '', isToday: false, isYesterday: false };
@@ -98,13 +99,49 @@ const OrdersPage = () => {
     customerId: '',
     customerSearch: '',
     items: [{ productName: '', quantity: 1, rate: '' }],
-    discount: 0,
+    discount: '',
     courierName: '',
-    courierCharge: 0,
-    paidAmount: 0,
+    courierCharge: '',
+    paidAmount: '',
     deliveryAddress: '',
     notes: '',
   });
+
+  const [showQuickCustomerModal, setShowQuickCustomerModal] = useState(false);
+  const [quickCustomerForm, setQuickCustomerForm] = useState({
+    name: '',
+    phone: '',
+    address: '',
+    area: '',
+  });
+
+  const quickCustomerMutation = useMutation({
+    mutationFn: (data) => customerAPI.create(data),
+    onSuccess: (res) => {
+      const newCust = res.data.data;
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['customer-search'] });
+      toast.success(`Customer ${newCust.name} created!`);
+      setOrderForm((prev) => ({
+        ...prev,
+        customerId: newCust._id,
+        customerSearch: `${newCust.name} (${newCust.phone})`,
+        deliveryAddress: newCust.address,
+      }));
+      setShowQuickCustomerModal(false);
+      setQuickCustomerForm({ name: '', phone: '', address: '', area: '' });
+    },
+    onError: (err) => toast.error(err.response?.data?.message || 'Failed to create customer'),
+  });
+
+  const handleQuickCustomerSubmit = (e) => {
+    e.preventDefault();
+    if (!isBDPhoneValid(quickCustomerForm.phone)) {
+      toast.error('Customer phone number must be exactly 11 digits (e.g. 017XXXXXXXX)');
+      return;
+    }
+    quickCustomerMutation.mutate(quickCustomerForm);
+  };
 
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'summary'
   const [datePreset, setDatePreset] = useState('all');
@@ -163,23 +200,27 @@ const OrdersPage = () => {
     setViewMode('list');
   };
 
+  const [search, setSearch] = useState('');
+  const [limit, setLimit] = useState(20);
+
   const { data, isLoading } = useQuery({
-    queryKey: ['orders', page, statusFilter, paymentFilter, startDate, endDate],
+    queryKey: ['orders', page, limit, statusFilter, paymentFilter, startDate, endDate, search],
     queryFn: () =>
       orderAPI
         .getAll({
           page,
-          limit: 20,
+          limit,
           status: statusFilter || undefined,
           paymentStatus: paymentFilter || undefined,
           startDate: startDate || undefined,
           endDate: endDate || undefined,
+          search: search.trim() || undefined,
         })
         .then((r) => r.data),
   });
 
   const { data: summaryData, isLoading: isSummaryLoading } = useQuery({
-    queryKey: ['orders-daily-summary', startDate, endDate, statusFilter, paymentFilter],
+    queryKey: ['orders-daily-summary', startDate, endDate, statusFilter, paymentFilter, search],
     queryFn: () =>
       orderAPI
         .getDailySummary({
@@ -187,6 +228,7 @@ const OrdersPage = () => {
           endDate: endDate || undefined,
           status: statusFilter || undefined,
           paymentStatus: paymentFilter || undefined,
+          search: search.trim() || undefined,
         })
         .then((r) => r.data.data),
   });
@@ -296,10 +338,10 @@ const OrdersPage = () => {
         quantity: it.quantity,
         rate: it.rate,
       })) || [{ productName: '', quantity: 1, rate: '' }],
-      discount: order.discount || 0,
+      discount: order.discount ? String(order.discount) : '',
       courierName: order.courierName || '',
       courierTrackingId: order.courierTrackingId || '',
-      courierCharge: order.courierCharge || 0,
+      courierCharge: order.courierCharge ? String(order.courierCharge) : '',
       deliveryAddress: order.deliveryAddress || order.customer?.address || '',
       notes: order.notes || '',
     });
@@ -307,9 +349,15 @@ const OrdersPage = () => {
 
   const resetOrderForm = () => {
     setOrderForm({
-      customerId: '', customerSearch: '',
+      customerId: '',
+      customerSearch: '',
       items: [{ productName: '', quantity: 1, rate: '' }],
-      discount: 0, courierName: '', courierCharge: 0, paidAmount: 0, deliveryAddress: '', notes: '',
+      discount: '',
+      courierName: '',
+      courierCharge: '',
+      paidAmount: '',
+      deliveryAddress: '',
+      notes: '',
     });
   };
 
@@ -394,6 +442,94 @@ const OrdersPage = () => {
             <Plus size={18} /> New Order
           </button>
         </div>
+      </div>
+
+      {/* Search Bar with Live Clear */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 'var(--space-md)',
+        marginBottom: 'var(--space-md)',
+        flexWrap: 'wrap',
+      }}>
+        <div style={{ position: 'relative', flex: '1 1 320px', minWidth: 260 }}>
+          <Search
+            size={16}
+            style={{
+              position: 'absolute',
+              left: 12,
+              top: '50%',
+              transform: 'translateY(-50%)',
+              color: 'var(--text-tertiary)',
+              pointerEvents: 'none',
+            }}
+          />
+          <input
+            type="text"
+            className="form-input"
+            placeholder="Search orders by customer name, phone (01XXXXXXXXX) or memo..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            style={{
+              paddingLeft: 38,
+              paddingRight: search ? 34 : 12,
+              height: 38,
+              fontSize: '0.875rem',
+            }}
+          />
+          {search && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearch('');
+                setPage(1);
+              }}
+              style={{
+                position: 'absolute',
+                right: 10,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-tertiary)',
+                cursor: 'pointer',
+                padding: 4,
+                display: 'flex',
+                alignItems: 'center',
+              }}
+              title="Clear search"
+            >
+              <X size={14} />
+            </button>
+          )}
+        </div>
+
+        {search && (
+          <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '4px 12px',
+            borderRadius: 'var(--radius-full)',
+            background: 'var(--accent-primary-light)',
+            color: 'var(--accent-secondary)',
+            fontSize: '0.75rem',
+            fontWeight: 500,
+          }}>
+            <span>Search: "{search}" ({pagination.total || 0} orders found)</span>
+            <button
+              type="button"
+              onClick={() => { setSearch(''); setPage(1); }}
+              style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: 0 }}
+              title="Clear search filter"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* View Mode Switcher */}
@@ -1067,15 +1203,97 @@ const OrdersPage = () => {
             ))}
           </div>
 
-              {pagination.pages > 1 && (
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 'var(--space-md)', marginTop: 'var(--space-lg)' }}>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
-                    <ChevronLeft size={16} /> Previous
-                  </button>
-                  <span className="text-muted" style={{ fontSize: '0.875rem' }}>Page {page} of {pagination.pages}</span>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setPage((p) => Math.min(pagination.pages, p + 1))} disabled={page >= pagination.pages}>
-                    Next <ChevronRight size={16} />
-                  </button>
+              {/* Enhanced Pagination Controls */}
+              {pagination.total > 0 && (
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: 'var(--space-md)',
+                  marginTop: 'var(--space-lg)',
+                  paddingTop: 'var(--space-md)',
+                  borderTop: '1px solid var(--border)',
+                }}>
+                  {/* Left: Range and Total Count */}
+                  <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                    Showing <strong>{((page - 1) * limit) + 1}</strong>–<strong>{Math.min(page * limit, pagination.total || 0)}</strong> of <strong>{pagination.total || 0}</strong> orders
+                    {search && <span style={{ color: 'var(--accent-secondary)' }}> (matching "{search}")</span>}
+                  </div>
+
+                  {/* Center: Page numbers navigation */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setPage((p) => Math.max(1, p - 1))}
+                      disabled={page <= 1}
+                      style={{ padding: '4px 8px', height: 30, fontSize: '0.75rem' }}
+                    >
+                      <ChevronLeft size={14} /> Prev
+                    </button>
+
+                    {/* Page Numbers */}
+                    {Array.from({ length: pagination.pages || 1 }, (_, i) => i + 1)
+                      .filter((p) => p === 1 || p === pagination.pages || Math.abs(p - page) <= 1)
+                      .reduce((acc, p, idx, arr) => {
+                        if (idx > 0 && p - arr[idx - 1] > 1) {
+                          acc.push('...');
+                        }
+                        acc.push(p);
+                        return acc;
+                      }, [])
+                      .map((item, idx) =>
+                        item === '...' ? (
+                          <span key={`dots-${idx}`} style={{ padding: '0 4px', color: 'var(--text-tertiary)', fontSize: '0.75rem' }}>...</span>
+                        ) : (
+                          <button
+                            key={item}
+                            type="button"
+                            className={`btn btn-sm ${page === item ? 'btn-primary' : 'btn-ghost'}`}
+                            onClick={() => setPage(item)}
+                            style={{
+                              minWidth: 28,
+                              height: 30,
+                              padding: '0 8px',
+                              fontSize: '0.75rem',
+                              fontWeight: page === item ? 700 : 500,
+                            }}
+                          >
+                            {item}
+                          </button>
+                        )
+                      )}
+
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setPage((p) => Math.min(pagination.pages, p + 1))}
+                      disabled={page >= pagination.pages}
+                      style={{ padding: '4px 8px', height: 30, fontSize: '0.75rem' }}
+                    >
+                      Next <ChevronRight size={14} />
+                    </button>
+                  </div>
+
+                  {/* Right: Page Size Selector */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8125rem', color: 'var(--text-secondary)' }}>
+                    <span>Rows per page:</span>
+                    <select
+                      className="form-select"
+                      value={limit}
+                      onChange={(e) => {
+                        setLimit(Number(e.target.value));
+                        setPage(1);
+                      }}
+                      style={{ width: 'auto', padding: '2px 24px 2px 8px', height: 30, fontSize: '0.75rem' }}
+                    >
+                      <option value={10}>10</option>
+                      <option value={20}>20</option>
+                      <option value={50}>50</option>
+                      <option value={100}>100</option>
+                    </select>
+                  </div>
                 </div>
               )}
             </>
@@ -1097,11 +1315,21 @@ const OrdersPage = () => {
               <div className="modal-body">
                 {/* Customer Search */}
                 <div className="form-group">
-                  <label className="form-label">Customer *</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <label className="form-label" style={{ marginBottom: 0 }}>Customer *</label>
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setShowQuickCustomerModal(true)}
+                      style={{ fontSize: '0.75rem', padding: '2px 8px', height: 24, gap: 4, color: 'var(--accent-secondary)' }}
+                    >
+                      <Plus size={12} /> New Customer
+                    </button>
+                  </div>
                   <div style={{ position: 'relative' }}>
                     <input
                       className="form-input"
-                      placeholder="Search customer by name or phone..."
+                      placeholder="Search customer by name or phone (01XXXXXXXXX)..."
                       value={orderForm.customerSearch}
                       onChange={(e) => setOrderForm({ ...orderForm, customerSearch: e.target.value, customerId: '' })}
                     />
@@ -1134,9 +1362,40 @@ const OrdersPage = () => {
                         ))}
                       </div>
                     )}
+                    {customersData && customersData.length === 0 && !orderForm.customerId && orderForm.customerSearch.length >= 2 && (
+                      <div style={{
+                        position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10,
+                        background: 'var(--bg-secondary)', border: '1px solid var(--border)',
+                        borderRadius: 'var(--radius-md)', padding: '12px 14px',
+                        boxShadow: 'var(--shadow-lg)', textAlign: 'center',
+                      }}>
+                        <div style={{ fontSize: '0.8125rem', color: 'var(--text-secondary)', marginBottom: 8 }}>
+                          No customer found matching "{orderForm.customerSearch}"
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-primary btn-sm"
+                          onClick={() => {
+                            const isDigits = /^\d+$/.test(orderForm.customerSearch);
+                            setQuickCustomerForm({
+                              name: isDigits ? '' : orderForm.customerSearch,
+                              phone: isDigits ? orderForm.customerSearch : '',
+                              address: '',
+                              area: '',
+                            });
+                            setShowQuickCustomerModal(true);
+                          }}
+                          style={{ fontSize: '0.75rem', padding: '4px 10px', gap: 5 }}
+                        >
+                          <Plus size={13} /> Create "{orderForm.customerSearch}" as New Customer
+                        </button>
+                      </div>
+                    )}
                   </div>
                   {orderForm.customerId && (
-                    <div style={{ fontSize: '0.75rem', color: 'var(--success)', marginTop: 4 }}>✓ Customer selected</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--success)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <CheckCircle2 size={12} /> Customer selected
+                    </div>
                   )}
                 </div>
 
@@ -1199,7 +1458,7 @@ const OrdersPage = () => {
                       <input
                         type="number"
                         className="form-input"
-                        placeholder="Qty"
+                        placeholder="1"
                         value={item.quantity}
                         onChange={(e) => updateItem(idx, 'quantity', e.target.value)}
                         style={{ width: 70 }}
@@ -1209,7 +1468,7 @@ const OrdersPage = () => {
                       <input
                         type="number"
                         className="form-input"
-                        placeholder="Rate"
+                        placeholder="0"
                         value={item.rate}
                         onChange={(e) => updateItem(idx, 'rate', e.target.value)}
                         style={{ width: 90 }}
@@ -1235,15 +1494,36 @@ const OrdersPage = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-md)' }}>
                   <div className="form-group">
                     <label className="form-label">Discount (৳)</label>
-                    <input type="number" className="form-input" min="0" value={orderForm.discount} onChange={(e) => setOrderForm({ ...orderForm, discount: e.target.value })} />
+                    <input
+                      type="number"
+                      className="form-input"
+                      placeholder="0"
+                      min="0"
+                      value={orderForm.discount}
+                      onChange={(e) => setOrderForm({ ...orderForm, discount: e.target.value })}
+                    />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Courier Charge (৳)</label>
-                    <input type="number" className="form-input" min="0" value={orderForm.courierCharge} onChange={(e) => setOrderForm({ ...orderForm, courierCharge: e.target.value })} />
+                    <input
+                      type="number"
+                      className="form-input"
+                      placeholder="0"
+                      min="0"
+                      value={orderForm.courierCharge}
+                      onChange={(e) => setOrderForm({ ...orderForm, courierCharge: e.target.value })}
+                    />
                   </div>
                   <div className="form-group">
                     <label className="form-label">Advance / Paid (৳)</label>
-                    <input type="number" className="form-input" min="0" value={orderForm.paidAmount} onChange={(e) => setOrderForm({ ...orderForm, paidAmount: e.target.value })} />
+                    <input
+                      type="number"
+                      className="form-input"
+                      placeholder="0"
+                      min="0"
+                      value={orderForm.paidAmount}
+                      onChange={(e) => setOrderForm({ ...orderForm, paidAmount: e.target.value })}
+                    />
                   </div>
                 </div>
 
@@ -1674,7 +1954,14 @@ const OrdersPage = () => {
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Phone:</div>
-                  <div style={{ fontWeight: 600, color: 'var(--accent-secondary)' }}>{showTrackingSmsModal.phone}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, justifyContent: 'flex-end' }}>
+                    <div style={{ fontWeight: 600, color: 'var(--accent-secondary)' }}>{showTrackingSmsModal.phone}</div>
+                    {showTrackingSmsModal.phone.length === 11 ? (
+                      <span className="badge badge-success" style={{ fontSize: '0.625rem', padding: '1px 5px' }}>✓ 11 Digits</span>
+                    ) : (
+                      <span className="badge badge-warning" style={{ fontSize: '0.625rem', padding: '1px 5px' }}>{showTrackingSmsModal.phone.length}/11 Digits</span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -1734,7 +2021,11 @@ const OrdersPage = () => {
                 e.preventDefault();
                 editOrderMutation.mutate({
                   id: showEditOrderModal._id,
-                  data: editOrderForm,
+                  data: {
+                    ...editOrderForm,
+                    discount: parseFloat(editOrderForm.discount) || 0,
+                    courierCharge: parseFloat(editOrderForm.courierCharge) || 0,
+                  },
                 });
               }}
             >
@@ -1820,9 +2111,10 @@ const OrdersPage = () => {
                     <input
                       className="form-input"
                       type="number"
+                      placeholder="0"
                       min="0"
                       value={editOrderForm.discount}
-                      onChange={(e) => setEditOrderForm({ ...editOrderForm, discount: parseFloat(e.target.value) || 0 })}
+                      onChange={(e) => setEditOrderForm({ ...editOrderForm, discount: e.target.value })}
                     />
                   </div>
                   <div>
@@ -1830,9 +2122,10 @@ const OrdersPage = () => {
                     <input
                       className="form-input"
                       type="number"
+                      placeholder="0"
                       min="0"
                       value={editOrderForm.courierCharge}
-                      onChange={(e) => setEditOrderForm({ ...editOrderForm, courierCharge: parseFloat(e.target.value) || 0 })}
+                      onChange={(e) => setEditOrderForm({ ...editOrderForm, courierCharge: e.target.value })}
                     />
                   </div>
                 </div>
@@ -1882,6 +2175,83 @@ const OrdersPage = () => {
                 <button type="submit" className="btn btn-primary" disabled={editOrderMutation.isPending}>
                   {editOrderMutation.isPending && <div className="spinner" />}
                   Save Changes & Reconcile
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Add Customer Modal inside Orders */}
+      {showQuickCustomerModal && (
+        <div className="modal-overlay" style={{ zIndex: 1100 }}>
+          <div className="modal animate-slide-up" style={{ maxWidth: 440 }}>
+            <div className="modal-header">
+              <h3 className="modal-title">Quick Add Customer</h3>
+              <button
+                type="button"
+                className="btn btn-ghost btn-icon btn-sm"
+                onClick={() => setShowQuickCustomerModal(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <form onSubmit={handleQuickCustomerSubmit}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Customer Name *</label>
+                  <input
+                    className="form-input"
+                    placeholder="Full name"
+                    value={quickCustomerForm.name}
+                    onChange={(e) => setQuickCustomerForm({ ...quickCustomerForm, name: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <PhoneInput
+                  label="Phone Number"
+                  value={quickCustomerForm.phone}
+                  onChange={(val) => setQuickCustomerForm({ ...quickCustomerForm, phone: val })}
+                  required
+                />
+
+                <div className="form-group">
+                  <label className="form-label">Delivery Address *</label>
+                  <input
+                    className="form-input"
+                    placeholder="Delivery address in Bangladesh"
+                    value={quickCustomerForm.address}
+                    onChange={(e) => setQuickCustomerForm({ ...quickCustomerForm, address: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Area / District (Optional)</label>
+                  <input
+                    className="form-input"
+                    placeholder="e.g. Dhaka, Rajshahi"
+                    value={quickCustomerForm.area}
+                    onChange={(e) => setQuickCustomerForm({ ...quickCustomerForm, area: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => setShowQuickCustomerModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={quickCustomerMutation.isPending}
+                >
+                  {quickCustomerMutation.isPending && <div className="spinner" />}
+                  Create & Select
                 </button>
               </div>
             </form>

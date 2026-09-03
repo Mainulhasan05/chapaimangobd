@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
-import { Menu, Bell } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import Sidebar from './Sidebar';
 import MobileNav from './MobileNav';
 import { useAuth } from '../../context/AuthContext';
@@ -25,9 +25,6 @@ const AppLayout = () => {
           </div>
 
           <div className="main-header-right">
-            <button className="btn-icon btn-ghost">
-              <Bell size={20} />
-            </button>
             <div className="header-user">
               <div className="header-avatar">
                 {user?.name?.charAt(0)?.toUpperCase() || 'A'}

@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import Order from '../models/Order.js';
 import Customer from '../models/Customer.js';
 import Payment from '../models/Payment.js';
@@ -41,15 +42,46 @@ export const getOrders = async (req, res, next) => {
       }
     }
 
+    // Search filter: customer name, phone, altPhone, courier memo, or order ID
+    if (search && search.trim()) {
+      const term = search.trim();
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(escaped, 'i');
+
+      const matchingCustomers = await Customer.find({
+        $or: [
+          { name: searchRegex },
+          { phone: searchRegex },
+          { altPhone: searchRegex },
+        ],
+      }).select('_id');
+
+      const customerIds = matchingCustomers.map((c) => c._id);
+
+      const orConditions = [
+        { customer: { $in: customerIds } },
+        { courierTrackingId: searchRegex },
+        { courierName: searchRegex },
+      ];
+
+      if (/^[0-9a-fA-F]{24}$/.test(term)) {
+        orConditions.push({ _id: term });
+      }
+
+      query.$or = orConditions;
+    }
+
+    const pageNum = Math.max(1, parseInt(page) || 1);
+    const limitNum = Math.max(1, parseInt(limit) || 20);
     const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const skip = (pageNum - 1) * limitNum;
 
     const [orders, total] = await Promise.all([
       Order.find(query)
         .populate('customer', 'name phone address totalDue')
         .sort(sort)
         .skip(skip)
-        .limit(parseInt(limit)),
+        .limit(limitNum),
       Order.countDocuments(query),
     ]);
 
@@ -57,10 +89,10 @@ export const getOrders = async (req, res, next) => {
       success: true,
       data: orders,
       pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
+        page: pageNum,
+        limit: limitNum,
         total,
-        pages: Math.ceil(total / parseInt(limit)),
+        pages: Math.ceil(total / limitNum) || 1,
       },
     });
   } catch (error) {
@@ -453,12 +485,40 @@ export const addOrderPayment = async (req, res, next) => {
 // @route   GET /api/orders/daily-summary
 export const getDailySummary = async (req, res, next) => {
   try {
-    const { startDate, endDate, status, paymentStatus } = req.query;
+    const { startDate, endDate, status, paymentStatus, search } = req.query;
 
     const match = {};
 
     if (status) match.status = status;
     if (paymentStatus) match.paymentStatus = paymentStatus;
+
+    if (search && search.trim()) {
+      const term = search.trim();
+      const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const searchRegex = new RegExp(escaped, 'i');
+
+      const matchingCustomers = await Customer.find({
+        $or: [
+          { name: searchRegex },
+          { phone: searchRegex },
+          { altPhone: searchRegex },
+        ],
+      }).select('_id');
+
+      const customerIds = matchingCustomers.map((c) => c._id);
+
+      const orConditions = [
+        { customer: { $in: customerIds } },
+        { courierTrackingId: searchRegex },
+        { courierName: searchRegex },
+      ];
+
+      if (/^[0-9a-fA-F]{24}$/.test(term)) {
+        orConditions.push({ _id: new mongoose.Types.ObjectId(term) });
+      }
+
+      match.$or = orConditions;
+    }
 
     if (startDate || endDate) {
       match.orderDate = {};
