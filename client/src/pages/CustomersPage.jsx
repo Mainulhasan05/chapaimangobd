@@ -15,6 +15,7 @@ import {
   Edit2,
   DollarSign,
   FileSpreadsheet,
+  MessageSquare,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -196,7 +197,18 @@ const CustomersPage = () => {
                       <div style={{ fontWeight: 500 }}>{c.name}</div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{c.address}</div>
                     </td>
-                    <td>{c.phone}</td>
+                    <td>
+                      <div>{c.phone}</div>
+                      {c.totalSmsSent > 0 && (
+                        <span
+                          className="badge badge-neutral"
+                          title={`${c.totalSmsSent} SMS delivered to this customer`}
+                          style={{ fontSize: '0.625rem', padding: '1px 5px', gap: 3, display: 'inline-flex', alignItems: 'center', marginTop: 2 }}
+                        >
+                          <MessageSquare size={9} style={{ color: 'var(--accent-secondary)' }} /> {c.totalSmsSent} SMS
+                        </span>
+                      )}
+                    </td>
                     <td>{c.area || '—'}</td>
                     <td>{c.orderCount}</td>
                     <td>৳{c.totalPurchases?.toLocaleString()}</td>
@@ -264,12 +276,22 @@ const CustomersPage = () => {
                       {c.name}
                     </div>
                     {c.phone && (
-                      <a
-                        href={`tel:${c.phone}`}
-                        style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', color: 'var(--accent-secondary)', marginTop: 2 }}
-                      >
-                        <Phone size={12} /> {c.phone}
-                      </a>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 2 }}>
+                        <a
+                          href={`tel:${c.phone}`}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: '0.75rem', color: 'var(--accent-secondary)' }}
+                        >
+                          <Phone size={12} /> {c.phone}
+                        </a>
+                        {c.totalSmsSent > 0 && (
+                          <span
+                            className="badge badge-neutral"
+                            style={{ fontSize: '0.625rem', padding: '1px 5px', gap: 3, display: 'inline-flex', alignItems: 'center' }}
+                          >
+                            <MessageSquare size={9} style={{ color: 'var(--accent-secondary)' }} /> {c.totalSmsSent}
+                          </span>
+                        )}
+                      </div>
                     )}
                   </div>
                   {c.area && (

@@ -10,6 +10,7 @@ import {
   DollarSign,
   TrendingUp,
   AlertCircle,
+  MessageSquare,
 } from 'lucide-react';
 
 const formatDate = (d) =>
@@ -100,6 +101,16 @@ const CustomerDetailPage = () => {
           <div className="stat-card-icon"><ShoppingCart size={20} /></div>
           <div className="stat-card-label">Total Orders</div>
           <div className="stat-card-value" style={{ fontSize: '1.375rem' }}>{customer.orderCount}</div>
+        </div>
+        <div className="stat-card" style={{ borderLeft: '3px solid var(--accent-secondary)' }}>
+          <div className="stat-card-icon" style={{ color: 'var(--accent-secondary)', background: 'rgba(59, 130, 246, 0.12)' }}>
+            <MessageSquare size={20} />
+          </div>
+          <div className="stat-card-label">SMS Dispatched</div>
+          <div className="stat-card-value" style={{ fontSize: '1.375rem' }}>{customer.totalSmsSent || 0}</div>
+          <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: 4 }}>
+            {customer.lastSmsSentAt ? `Last: ${formatDate(customer.lastSmsSentAt)}` : 'No SMS sent'}
+          </div>
         </div>
       </div>
 

@@ -23,6 +23,7 @@ import {
   Check,
   Users,
   Coins,
+  TrendingUp,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -100,6 +101,11 @@ const SMSPage = () => {
   const [selectedLogDetails, setSelectedLogDetails] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
 
+  // SMS History filters & pagination
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyStatus, setHistoryStatus] = useState('all');
+  const [historyPage, setHistoryPage] = useState(1);
+
   const handleCopyMessage = (text, id) => {
     if (!text) return;
     navigator.clipboard.writeText(text);
@@ -109,6 +115,11 @@ const SMSPage = () => {
   };
 
   const queryClient = useQueryClient();
+
+  const { data: statsData, refetch: refetchStats } = useQuery({
+    queryKey: ['sms-stats'],
+    queryFn: () => smsAPI.getStats().then((r) => r.data.data),
+  });
 
   const { data: balanceData, isLoading: balanceLoading, refetch: refetchBalance } = useQuery({
     queryKey: ['sms-balance'],
@@ -128,11 +139,22 @@ const SMSPage = () => {
         .then((r) => r.data),
   });
 
-  const { data: historyData, isLoading: historyLoading } = useQuery({
-    queryKey: ['sms-history'],
-    queryFn: () => smsAPI.getHistory({ limit: 20 }).then((r) => r.data.data),
+  const { data: historyResponse, isLoading: historyLoading, refetch: refetchHistory } = useQuery({
+    queryKey: ['sms-history', historyPage, historySearch, historyStatus],
+    queryFn: () =>
+      smsAPI
+        .getHistory({
+          page: historyPage,
+          limit: 15,
+          search: historySearch || undefined,
+          status: historyStatus !== 'all' ? historyStatus : undefined,
+        })
+        .then((r) => r.data),
     enabled: activeTab === 'history',
   });
+
+  const historyData = historyResponse?.data || [];
+  const historyPagination = historyResponse?.pagination || { page: 1, total: 0, pages: 1 };
 
   const previewMutation = useMutation({
     mutationFn: (data) => smsAPI.preview(data),
@@ -152,8 +174,10 @@ const SMSPage = () => {
       setPreviewData(null);
       setShowConfirmModal(false);
       setIsReviewedChecked(false);
+      queryClient.invalidateQueries({ queryKey: ['sms-stats'] });
       queryClient.invalidateQueries({ queryKey: ['sms-history'] });
       queryClient.invalidateQueries({ queryKey: ['sms-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to send SMS'),
   });
@@ -163,8 +187,10 @@ const SMSPage = () => {
     onSuccess: () => {
       toast.success('Test SMS sent successfully!');
       setShowTestModal(false);
+      queryClient.invalidateQueries({ queryKey: ['sms-stats'] });
       queryClient.invalidateQueries({ queryKey: ['sms-history'] });
       queryClient.invalidateQueries({ queryKey: ['sms-balance'] });
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to send test SMS'),
   });
@@ -266,7 +292,7 @@ const SMSPage = () => {
 
       {/* Gateway Status & Balance Banner */}
       <div className="card" style={{
-        marginBottom: 'var(--space-lg)',
+        marginBottom: 'var(--space-md)',
         padding: 'var(--space-md) var(--space-lg)',
         display: 'flex',
         alignItems: 'center',
@@ -305,8 +331,11 @@ const SMSPage = () => {
             </strong>
             <button
               className="btn btn-ghost btn-icon btn-sm"
-              onClick={() => refetchBalance()}
-              title="Refresh Balance"
+              onClick={() => {
+                refetchBalance();
+                refetchStats();
+              }}
+              title="Refresh Balance & Stats"
               style={{ width: 22, height: 22, padding: 0 }}
             >
               <RefreshCw size={12} className={balanceLoading ? 'spin' : ''} />
@@ -323,6 +352,66 @@ const SMSPage = () => {
                 <Info size={12} /> Simulated Mode
               </span>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* Real-time SMS Send Count & Tracking Metrics Grid */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+        gap: 'var(--space-md)',
+        marginBottom: 'var(--space-lg)',
+      }}>
+        <div className="stat-card">
+          <div className="stat-icon" style={{ background: 'rgba(59, 130, 246, 0.15)', color: 'var(--accent-primary)' }}>
+            <Send size={20} />
+          </div>
+          <div className="stat-info">
+            <span className="stat-label">Total SMS Delivered</span>
+            <span className="stat-value">{statsData?.totalSent?.toLocaleString() ?? 0}</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--success)' }}>
+              {statsData?.deliveryRate ?? 100}% Delivery Rate ({statsData?.totalFailed ?? 0} failed)
+            </span>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon" style={{ background: 'rgba(234, 179, 8, 0.15)', color: 'var(--warning)' }}>
+            <Coins size={20} />
+          </div>
+          <div className="stat-info">
+            <span className="stat-label">Tokens / Credits Used</span>
+            <span className="stat-value">{statsData?.totalCredits?.toLocaleString() ?? 0}</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+              Across {statsData?.totalDispatches ?? 0} Dispatches
+            </span>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon" style={{ background: 'rgba(16, 185, 129, 0.15)', color: 'var(--success)' }}>
+            <Clock size={20} />
+          </div>
+          <div className="stat-info">
+            <span className="stat-label">Dispatched Today</span>
+            <span className="stat-value">{statsData?.sentToday?.toLocaleString() ?? 0}</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+              {statsData?.creditsToday ?? 0} token credits today
+            </span>
+          </div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-icon" style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc' }}>
+            <TrendingUp size={20} />
+          </div>
+          <div className="stat-info">
+            <span className="stat-label">Dispatched This Month</span>
+            <span className="stat-value">{statsData?.sentThisMonth?.toLocaleString() ?? 0}</span>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+              {statsData?.creditsThisMonth ?? 0} token credits this month
+            </span>
           </div>
         </div>
       </div>
@@ -557,20 +646,86 @@ const SMSPage = () => {
 
       {activeTab === 'history' && (
         <div className="card">
-          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-sm)' }}>
             <div>
-              <h3 className="card-title">SMS Dispatch History</h3>
+              <h3 className="card-title">SMS Dispatch History & Tracking</h3>
               <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: 2 }}>
-                Audit log of all exact delivered customer messages, recipient handsets, and token usage.
+                Full audit record of delivered customer SMS messages, recipient handsets, and token credit costs.
               </p>
             </div>
             <button
               className="btn btn-secondary btn-sm"
-              onClick={() => queryClient.invalidateQueries({ queryKey: ['sms-history'] })}
+              onClick={() => {
+                queryClient.invalidateQueries({ queryKey: ['sms-history'] });
+                queryClient.invalidateQueries({ queryKey: ['sms-stats'] });
+              }}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
             >
               <RefreshCw size={13} className={historyLoading ? 'spin' : ''} /> Refresh History
             </button>
+          </div>
+
+          {/* History Filter Toolbar */}
+          <div style={{
+            padding: 'var(--space-sm) var(--space-md)',
+            background: 'var(--bg-glass)',
+            borderBottom: '1px solid var(--border)',
+            display: 'flex',
+            gap: 'var(--space-sm)',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+          }}>
+            <div style={{ display: 'flex', gap: 'var(--space-sm)', alignItems: 'center', flex: 1, minWidth: 260, maxWidth: 460 }}>
+              <div className="search-box" style={{ width: '100%', position: 'relative' }}>
+                <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Search recipient name, phone, or message..."
+                  value={historySearch}
+                  onChange={(e) => {
+                    setHistorySearch(e.target.value);
+                    setHistoryPage(1);
+                  }}
+                  style={{ paddingLeft: 32, fontSize: '0.8125rem', height: 36 }}
+                />
+                {historySearch && (
+                  <button
+                    onClick={() => { setHistorySearch(''); setHistoryPage(1); }}
+                    style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', color: 'var(--text-tertiary)', cursor: 'pointer' }}
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: 'var(--space-xs)', alignItems: 'center' }}>
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>Status:</span>
+              <div style={{ display: 'inline-flex', background: 'var(--bg-input)', padding: 2, borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)' }}>
+                {['all', 'sent', 'partial', 'failed'].map((st) => (
+                  <button
+                    key={st}
+                    onClick={() => { setHistoryStatus(st); setHistoryPage(1); }}
+                    style={{
+                      border: 'none',
+                      background: historyStatus === st ? 'var(--accent-primary)' : 'transparent',
+                      color: historyStatus === st ? '#fff' : 'var(--text-secondary)',
+                      padding: '4px 10px',
+                      fontSize: '0.75rem',
+                      borderRadius: 'calc(var(--radius-sm) - 2px)',
+                      cursor: 'pointer',
+                      fontWeight: historyStatus === st ? 600 : 400,
+                      textTransform: 'capitalize',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    {st === 'all' ? 'All' : st === 'sent' ? 'Delivered' : st}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
           {historyLoading ? (
             <div className="loading-overlay"><div className="spinner" /></div>
@@ -703,6 +858,43 @@ const SMSPage = () => {
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* History Pagination Bar */}
+          {historyPagination.pages > 1 && (
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: 'var(--space-md)',
+              borderTop: '1px solid var(--border)',
+              fontSize: '0.8125rem',
+              color: 'var(--text-secondary)',
+              flexWrap: 'wrap',
+              gap: 'var(--space-sm)',
+            }}>
+              <div>
+                Showing page <strong>{historyPagination.page}</strong> of <strong>{historyPagination.pages}</strong> ({historyPagination.total} total logs)
+              </div>
+              <div style={{ display: 'flex', gap: 'var(--space-xs)' }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                  disabled={historyPage <= 1}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                >
+                  <ChevronLeft size={14} /> Prev
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setHistoryPage((p) => Math.min(historyPagination.pages, p + 1))}
+                  disabled={historyPage >= historyPagination.pages}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                >
+                  Next <ChevronRight size={14} />
+                </button>
+              </div>
             </div>
           )}
         </div>
