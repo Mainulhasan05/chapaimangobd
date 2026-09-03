@@ -3,6 +3,20 @@ import Order from '../models/Order.js';
 import Payment from '../models/Payment.js';
 import { createAuditLog } from '../utils/auditLogger.js';
 
+/**
+ * Normalizes BD phone numbers to 11 digits
+ */
+export const normalizePhone = (phone) => {
+  if (!phone) return '';
+  let digits = phone.toString().replace(/\D/g, '');
+  if ((digits.startsWith('8801') || digits.startsWith('880')) && digits.length >= 13) {
+    digits = digits.slice(2);
+  } else if (digits.startsWith('88') && digits.length === 13) {
+    digits = digits.slice(2);
+  }
+  return digits.slice(0, 11);
+};
+
 // @desc    Get all customers
 // @route   GET /api/customers
 export const getCustomers = async (req, res, next) => {
@@ -79,10 +93,26 @@ export const createCustomer = async (req, res, next) => {
   try {
     const { name, phone, altPhone, address, area, openingBalance, notes } = req.body;
 
+    const cleanPhone = normalizePhone(phone);
+    if (!cleanPhone || cleanPhone.length !== 11 || !cleanPhone.startsWith('01')) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number must be exactly 11 digits starting with 01 (e.g. 017XXXXXXXX)',
+      });
+    }
+
+    const cleanAltPhone = altPhone ? normalizePhone(altPhone) : undefined;
+    if (cleanAltPhone && (cleanAltPhone.length !== 11 || !cleanAltPhone.startsWith('01'))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Alternative phone number must be exactly 11 digits (e.g. 017XXXXXXXX)',
+      });
+    }
+
     const customer = await Customer.create({
       name,
-      phone,
-      altPhone,
+      phone: cleanPhone,
+      altPhone: cleanAltPhone,
       address,
       area,
       openingBalance: openingBalance || 0,
@@ -116,9 +146,33 @@ export const updateCustomer = async (req, res, next) => {
   try {
     const { name, phone, altPhone, address, area, notes, status } = req.body;
 
+    const cleanPhone = phone ? normalizePhone(phone) : undefined;
+    if (cleanPhone && (cleanPhone.length !== 11 || !cleanPhone.startsWith('01'))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number must be exactly 11 digits starting with 01 (e.g. 017XXXXXXXX)',
+      });
+    }
+
+    const cleanAltPhone = altPhone ? normalizePhone(altPhone) : undefined;
+    if (cleanAltPhone && (cleanAltPhone.length !== 11 || !cleanAltPhone.startsWith('01'))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Alternative phone number must be exactly 11 digits (e.g. 017XXXXXXXX)',
+      });
+    }
+
     const customer = await Customer.findByIdAndUpdate(
       req.params.id,
-      { name, phone, altPhone, address, area, notes, status },
+      {
+        name,
+        ...(cleanPhone && { phone: cleanPhone }),
+        ...(cleanAltPhone !== undefined && { altPhone: cleanAltPhone }),
+        address,
+        area,
+        notes,
+        status,
+      },
       { new: true, runValidators: true }
     );
 

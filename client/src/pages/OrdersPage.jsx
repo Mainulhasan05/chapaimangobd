@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import ConfirmModal from '../components/ConfirmModal';
 
 const formatSummaryDate = (dateStr) => {
   if (!dateStr) return { formatted: '', isToday: false, isYesterday: false };
@@ -88,6 +89,7 @@ const OrdersPage = () => {
   const [showEditOrderModal, setShowEditOrderModal] = useState(null);
   const [editOrderForm, setEditOrderForm] = useState(null);
   const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'cash', note: '' });
+  const [orderToDelete, setOrderToDelete] = useState(null);
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
@@ -895,13 +897,10 @@ const OrdersPage = () => {
                           </button>
                         )}
                         <button
-                          className="btn btn-ghost btn-icon btn-sm"
+                          type="button"
+                          className="btn btn-ghost btn-icon btn-sm text-danger"
                           title="Delete Order"
-                          onClick={() => {
-                            if (window.confirm(`Are you sure you want to delete order #${order._id.slice(-6)}? This will reverse customer balances.`)) {
-                              deleteOrderMutation.mutate(order._id);
-                            }
-                          }}
+                          onClick={() => setOrderToDelete(order)}
                           style={{ color: 'var(--danger)' }}
                         >
                           <Trash2 size={14} />
@@ -1045,6 +1044,14 @@ const OrdersPage = () => {
                     onClick={() => handleOpenEditOrder(order)}
                   >
                     <Edit2 size={13} /> Edit
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm text-danger"
+                    onClick={() => setOrderToDelete(order)}
+                    style={{ color: 'var(--danger)' }}
+                  >
+                    <Trash2 size={13} /> Delete
                   </button>
                   {order.orderDue > 0 && (
                     <button
@@ -1881,6 +1888,37 @@ const OrdersPage = () => {
           </div>
         </div>
       )}
+
+      {/* Soft Confirmation Modal for Order Deletion */}
+      <ConfirmModal
+        isOpen={Boolean(orderToDelete)}
+        onClose={() => setOrderToDelete(null)}
+        onConfirm={() => {
+          if (orderToDelete) {
+            deleteOrderMutation.mutate(orderToDelete._id, {
+              onSettled: () => setOrderToDelete(null),
+            });
+          }
+        }}
+        title="Delete Order"
+        message={
+          orderToDelete
+            ? `Are you sure you want to delete order #${orderToDelete._id.slice(-6)} for ${orderToDelete.customer?.name || 'Customer'}?`
+            : ''
+        }
+        submessage={
+          orderToDelete ? (
+            <div>
+              <div style={{ fontWeight: 600, color: 'var(--danger)', marginBottom: 2 }}>Balance Reversal:</div>
+              Deleting this order will automatically reverse <strong>৳{(orderToDelete.totalBill || 0).toLocaleString()}</strong> from the customer's total purchases and due balance.
+            </div>
+          ) : null
+        }
+        confirmText="Delete Order"
+        cancelText="Cancel"
+        type="danger"
+        isLoading={deleteOrderMutation.isPending}
+      />
 
       {/* Responsive & Print Styles for Orders Page */}
       <style>{`

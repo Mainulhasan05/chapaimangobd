@@ -20,6 +20,8 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import ConfirmModal from '../components/ConfirmModal';
+import PhoneInput, { isBDPhoneValid } from '../components/PhoneInput';
 
 const CustomersPage = () => {
   const [search, setSearch] = useState('');
@@ -110,6 +112,14 @@ const CustomersPage = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    if (!isBDPhoneValid(form.phone)) {
+      toast.error('Customer phone number must be exactly 11 digits (e.g. 017XXXXXXXX)');
+      return;
+    }
+    if (form.altPhone && !isBDPhoneValid(form.altPhone)) {
+      toast.error('Alternative phone number must be exactly 11 digits (e.g. 017XXXXXXXX)');
+      return;
+    }
     const payload = {
       ...form,
       openingBalance: parseFloat(form.openingBalance) || 0,
@@ -447,25 +457,18 @@ const CustomersPage = () => {
                 </div>
 
                 <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Phone Number *</label>
-                    <input
-                      className="form-input"
-                      placeholder="01XXXXXXXXX"
-                      value={form.phone}
-                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Alt Phone</label>
-                    <input
-                      className="form-input"
-                      placeholder="Optional"
-                      value={form.altPhone}
-                      onChange={(e) => setForm({ ...form, altPhone: e.target.value })}
-                    />
-                  </div>
+                  <PhoneInput
+                    label="Phone Number"
+                    value={form.phone}
+                    onChange={(val) => setForm({ ...form, phone: val })}
+                    required
+                  />
+                  <PhoneInput
+                    label="Alt Phone"
+                    value={form.altPhone}
+                    onChange={(val) => setForm({ ...form, altPhone: val })}
+                    required={false}
+                  />
                 </div>
 
                 <div className="form-group">
@@ -598,77 +601,38 @@ const CustomersPage = () => {
         </div>
       )}
 
-      {/* Delete Customer Confirmation Modal */}
-      {customerToDelete && (
-        <div className="modal-overlay" onClick={() => !deleteMutation.isPending && setCustomerToDelete(null)}>
-          <div className="modal animate-slide-up" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 440 }}>
-            <div className="modal-header" style={{ borderBottom: 'none', paddingBottom: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
-                <div style={{
-                  width: 38, height: 38, borderRadius: 'var(--radius-md)',
-                  background: 'var(--danger-light)', color: 'var(--danger)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}>
-                  <AlertTriangle size={20} />
-                </div>
-                <h3 className="modal-title" style={{ color: 'var(--danger)' }}>Delete Customer</h3>
-              </div>
-              <button
-                className="btn btn-ghost btn-icon btn-sm"
-                onClick={() => setCustomerToDelete(null)}
-                disabled={deleteMutation.isPending}
-              >
-                <X size={18} />
-              </button>
+      {/* Soft Confirmation Modal for Customer Deletion */}
+      <ConfirmModal
+        isOpen={Boolean(customerToDelete)}
+        onClose={() => setCustomerToDelete(null)}
+        onConfirm={() => deleteMutation.mutate(customerToDelete._id)}
+        title="Delete Customer Profile"
+        message={
+          customerToDelete
+            ? `Are you sure you want to delete ${customerToDelete.name} (${customerToDelete.phone})?`
+            : ''
+        }
+        submessage={
+          customerToDelete && (customerToDelete.orderCount > 0 || customerToDelete.totalDue > 0) ? (
+            <div>
+              <div style={{ fontWeight: 600, color: 'var(--danger)', marginBottom: 2 }}>Warning:</div>
+              This customer has <strong>{customerToDelete.orderCount || 0} order(s)</strong> and <strong>৳{(customerToDelete.totalDue || 0).toLocaleString()} standing due</strong>. Deleting will permanently remove their records.
             </div>
-
-            <div className="modal-body" style={{ paddingTop: 'var(--space-md)' }}>
-              <p style={{ fontSize: '0.875rem', color: 'var(--text-primary)', marginBottom: 'var(--space-md)', lineHeight: 1.5 }}>
-                Are you sure you want to delete <strong>{customerToDelete.name}</strong> ({customerToDelete.phone})?
-              </p>
-
-              {(customerToDelete.orderCount > 0 || customerToDelete.totalDue > 0) && (
-                <div style={{
-                  background: 'rgba(239, 68, 68, 0.08)',
-                  border: '1px solid rgba(239, 68, 68, 0.2)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '10px 14px',
-                  fontSize: '0.8125rem',
-                  color: 'var(--text-secondary)',
-                  marginBottom: 'var(--space-md)',
-                }}>
-                  <div style={{ fontWeight: 600, color: 'var(--danger)', marginBottom: 2 }}>Warning:</div>
-                  This customer has <strong>{customerToDelete.orderCount || 0} order(s)</strong> and <strong>৳{(customerToDelete.totalDue || 0).toLocaleString()} standing due</strong>. Deleting this customer will permanently delete their profile and associated order records.
-                </div>
-              )}
-
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-                This action cannot be undone.
-              </p>
-            </div>
-
-            <div className="modal-footer" style={{ borderTop: 'none', paddingTop: 0 }}>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => setCustomerToDelete(null)}
-                disabled={deleteMutation.isPending}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn btn-danger"
-                onClick={() => deleteMutation.mutate(customerToDelete._id)}
-                disabled={deleteMutation.isPending}
-              >
-                {deleteMutation.isPending && <div className="spinner" />}
-                <Trash2 size={15} /> Delete Customer
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          ) : null
+        }
+        confirmText="Delete Customer"
+        cancelText="Cancel"
+        type="danger"
+        isLoading={deleteMutation.isPending}
+        secondaryAction={{
+          label: 'Deactivate instead',
+          onClick: () => {
+            updateMutation.mutate({ id: customerToDelete._id, data: { status: 'inactive' } });
+            setCustomerToDelete(null);
+            toast.success('Customer marked as inactive');
+          },
+        }}
+      />
 
       {/* Responsive Styles */}
       <style>{`

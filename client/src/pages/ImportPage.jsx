@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
+import ConfirmModal from '../components/ConfirmModal';
 
 const CANONICAL_FIELDS = [
   { value: 'customerName', label: 'Customer Name *' },
@@ -42,6 +43,7 @@ const ImportPage = () => {
   const [columnMapping, setColumnMapping] = useState({});
   const [importResult, setImportResult] = useState(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [showRollbackConfirm, setShowRollbackConfirm] = useState(false);
   const fileInputRef = useRef(null);
 
   const queryClient = useQueryClient();
@@ -255,13 +257,10 @@ const ImportPage = () => {
 
             {importResult.importBatchId && (
               <button
+                type="button"
                 className="btn btn-ghost btn-sm"
                 style={{ color: 'var(--danger)', border: '1px solid var(--danger)' }}
-                onClick={() => {
-                  if (window.confirm(`Are you sure you want to rollback batch ${importResult.importBatchId}? This will delete all orders created in this batch and reverse customer balances.`)) {
-                    rollbackMutation.mutate(importResult.importBatchId);
-                  }
-                }}
+                onClick={() => setShowRollbackConfirm(true)}
                 disabled={rollbackMutation.isPending}
               >
                 {rollbackMutation.isPending && <div className="spinner" />}
@@ -271,6 +270,35 @@ const ImportPage = () => {
           </div>
         </div>
       )}
+
+      {/* Soft Confirmation Modal for Import Rollback */}
+      <ConfirmModal
+        isOpen={showRollbackConfirm}
+        onClose={() => setShowRollbackConfirm(false)}
+        onConfirm={() => {
+          if (importResult?.importBatchId) {
+            rollbackMutation.mutate(importResult.importBatchId, {
+              onSettled: () => setShowRollbackConfirm(false),
+            });
+          }
+        }}
+        title="Rollback Import Batch"
+        message={
+          importResult
+            ? `Are you sure you want to rollback batch #${importResult.importBatchId}?`
+            : ''
+        }
+        submessage={
+          <div>
+            <div style={{ fontWeight: 600, color: 'var(--danger)', marginBottom: 2 }}>Warning:</div>
+            This will permanently delete all <strong>{importResult?.totalOrdersCreated || 0} orders</strong> created in this batch and reverse customer balances.
+          </div>
+        }
+        confirmText="Rollback Batch"
+        cancelText="Cancel"
+        type="danger"
+        isLoading={rollbackMutation.isPending}
+      />
 
       {/* Upload Zone */}
       {!previewData && !importResult && (

@@ -26,6 +26,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import PhoneInput, { isBDPhoneValid } from '../components/PhoneInput';
 
 const templateVariables = [
   { key: '{name}', label: 'Customer Name' },
@@ -251,8 +252,8 @@ const SMSPage = () => {
 
   const handleTestSubmit = (e) => {
     e.preventDefault();
-    if (!testPhone) {
-      toast.error('Please enter a phone number');
+    if (!isBDPhoneValid(testPhone)) {
+      toast.error('Recipient phone number must be a valid 11-digit Bangladeshi number (e.g. 017XXXXXXXX)');
       return;
     }
     testMutation.mutate({ phone: testPhone, message: testMessage });
@@ -1261,17 +1262,12 @@ const SMSPage = () => {
             </div>
             <form onSubmit={handleTestSubmit}>
               <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Recipient Phone Number (Bangladesh) *</label>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="01XXXXXXXXX"
-                    value={testPhone}
-                    onChange={(e) => setTestPhone(e.target.value)}
-                    required
-                  />
-                </div>
+                <PhoneInput
+                  label="Recipient Phone Number (Bangladesh)"
+                  value={testPhone}
+                  onChange={setTestPhone}
+                  required
+                />
                 <div className="form-group">
                   <label className="form-label">Message Content</label>
                   <textarea
