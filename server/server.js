@@ -70,6 +70,15 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
+// Method override for LiteSpeed / web hosts that restrict DELETE/PUT requests
+app.use((req, res, next) => {
+  const methodOverride = req.headers['x-http-method-override'] || req.query?._method;
+  if (methodOverride && req.method === 'POST') {
+    req.method = methodOverride.toUpperCase();
+  }
+  next();
+});
+
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }

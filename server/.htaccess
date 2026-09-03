@@ -1,0 +1,10 @@
+# ============================================
+# LiteSpeed & Apache Method Allow Configuration
+# ============================================
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+</IfModule>
+
+<Limit GET POST PUT DELETE OPTIONS PATCH>
+  Allow from all
+</Limit>
