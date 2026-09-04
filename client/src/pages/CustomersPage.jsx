@@ -202,6 +202,9 @@ const CustomersPage = () => {
         .then((r) => r.data),
   });
 
+  const customers = data?.data || [];
+  const pagination = data?.pagination || {};
+
   // Calculate resolved text for Add/Edit modal
   const finalAddModalSmsText = useMemo(() => {
     if (isDirectEdit) return cleanSmsText(customMessage);
@@ -653,9 +656,6 @@ const CustomersPage = () => {
       setIsSendingStandaloneSms(false);
     }
   };
-
-  const customers = data?.data || [];
-  const pagination = data?.pagination || {};
 
   return (
     <div className="page animate-fade-in">
