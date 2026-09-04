@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { customerAPI, smsAPI, getImageUrl } from '../api';
+import { customerAPI, smsAPI, getImageUrl, getWhatsAppLink } from '../api';
 import {
   ArrowLeft,
   Phone,
@@ -12,6 +12,7 @@ import {
   TrendingUp,
   AlertCircle,
   MessageSquare,
+  MessageCircle,
   Trash2,
   Send,
   CheckCircle,
@@ -271,6 +272,26 @@ const CustomerDetailPage = () => {
           >
             <MessageSquare size={16} /> Send SMS Reminder
           </button>
+
+          <a
+            href={getWhatsAppLink(customer.phone, resolvedSmsText)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-secondary btn-sm"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              color: '#25D366',
+              borderColor: 'rgba(37, 211, 102, 0.35)',
+              background: 'rgba(37, 211, 102, 0.08)',
+              fontWeight: 600,
+              textDecoration: 'none',
+            }}
+            title="Send Due Reminder via WhatsApp"
+          >
+            <MessageCircle size={16} /> WhatsApp Reminder
+          </a>
 
           <button
             type="button"
@@ -737,7 +758,7 @@ const CustomerDetailPage = () => {
               )}
             </div>
 
-            <div className="modal-footer">
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -745,16 +766,37 @@ const CustomerDetailPage = () => {
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={isSendingSms}
-                onClick={() => handleSendSms(false)}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-              >
-                {isSendingSms ? <div className="spinner" /> : <Send size={15} />}
-                Send Reminder SMS Now
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <a
+                  href={getWhatsAppLink(customer.phone, resolvedSmsText)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-success"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: '#25D366',
+                    borderColor: '#25D366',
+                    color: '#fff',
+                    fontWeight: 600,
+                    textDecoration: 'none',
+                  }}
+                  title="Open directly in WhatsApp with this exact message pre-typed"
+                >
+                  <MessageCircle size={15} /> Send via WhatsApp
+                </a>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={isSendingSms}
+                  onClick={() => handleSendSms(false)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  {isSendingSms ? <div className="spinner" /> : <Send size={15} />}
+                  Send Reminder SMS Now
+                </button>
+              </div>
             </div>
           </div>
         </div>

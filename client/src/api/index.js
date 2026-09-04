@@ -37,6 +37,29 @@ export const getImageUrl = (url) => {
   return `${BACKEND_URL}${cleanPath}`;
 };
 
+/**
+ * Generates a direct WhatsApp link with pre-filled message text
+ * Supports BD numbers (e.g. 017XXXXXXXX -> 88017XXXXXXXX)
+ */
+export const getWhatsAppLink = (phone, message) => {
+  if (!phone) return '#';
+  let cleanDigits = phone.toString().replace(/\D/g, '');
+  if (!cleanDigits) return '#';
+  if (cleanDigits.startsWith('880')) {
+    // already starts with 880
+  } else if (cleanDigits.startsWith('0')) {
+    cleanDigits = `88${cleanDigits}`;
+  } else if (cleanDigits.length === 10 && cleanDigits.startsWith('1')) {
+    cleanDigits = `880${cleanDigits}`;
+  } else if (cleanDigits.length === 11 && cleanDigits.startsWith('01')) {
+    cleanDigits = `88${cleanDigits}`;
+  } else {
+    cleanDigits = `880${cleanDigits}`;
+  }
+  const encodedText = message ? encodeURIComponent(message) : '';
+  return `https://wa.me/${cleanDigits}${encodedText ? `?text=${encodedText}` : ''}`;
+};
+
 const api = axios.create({
   baseURL: API_BASE,
   withCredentials: true,

@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { customerAPI, smsAPI, getImageUrl } from '../api';
+import { customerAPI, smsAPI, getImageUrl, getWhatsAppLink } from '../api';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
@@ -15,6 +15,7 @@ import {
   DollarSign,
   FileSpreadsheet,
   MessageSquare,
+  MessageCircle,
   Trash2,
   Send,
   CheckCircle,
@@ -99,6 +100,24 @@ const resolveReminderTemplate = ({ due, deadline, billUrl, whatsappNumber }, tem
     .replace('{billUrl}', billUrl || 'xxxxxxxxxx')
     .replace('{whatsappNumber}', whatsappNumber || '01717333880');
   return cleanSmsText(resolved);
+};
+
+// Generate formatted reminder message for any customer record
+const getCustomerReminderText = (customer, templateType = 'standard') => {
+  if (!customer) return '';
+  const code = customer.billShortCode || customer._id;
+  const billUrl = getPublicBillUrl(code);
+  const due = customer.totalDue ? Number(customer.totalDue).toLocaleString('en-BD') : '0';
+  const activeTemplate = templateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
+  return resolveReminderTemplate(
+    {
+      due,
+      deadline: '15 September 2026',
+      billUrl,
+      whatsappNumber: '01717333880',
+    },
+    activeTemplate
+  );
 };
 
 const CustomersPage = () => {
@@ -630,7 +649,7 @@ const CustomersPage = () => {
                   <th style={{ textAlign: 'right', minWidth: 110 }}>Total Bill</th>
                   <th style={{ textAlign: 'right', minWidth: 110 }}>Current Due</th>
                   <th style={{ minWidth: 140 }}>Memo / Note</th>
-                  <th className="customers-actions-header" style={{ textAlign: 'right', minWidth: 290 }}>
+                  <th className="customers-actions-header" style={{ textAlign: 'right', minWidth: 360 }}>
                     Actions
                   </th>
                 </tr>
@@ -649,7 +668,23 @@ const CustomersPage = () => {
                     </td>
 
                     <td>
-                      <div style={{ fontWeight: 500, fontFamily: 'monospace' }}>{c.phone}</div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ fontWeight: 500, fontFamily: 'monospace' }}>{c.phone}</span>
+                        <a
+                          href={getWhatsAppLink(c.phone, getCustomerReminderText(c))}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="Open WhatsApp chat with pre-filled due reminder"
+                          style={{
+                            color: '#25D366',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            opacity: 0.9,
+                          }}
+                        >
+                          <MessageCircle size={14} />
+                        </a>
+                      </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 3 }}>
                         {c.totalSmsSent > 0 ? (
                           <span
@@ -834,6 +869,30 @@ const CustomersPage = () => {
                         >
                           <MessageSquare size={13} /> SMS
                         </button>
+
+                        {/* Send WhatsApp Reminder Button */}
+                        <a
+                          href={getWhatsAppLink(c.phone, getCustomerReminderText(c))}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn btn-ghost btn-sm"
+                          title={`Send Due Reminder to ${c.name} via WhatsApp`}
+                          style={{
+                            padding: '4px 8px',
+                            fontSize: '0.75rem',
+                            height: 28,
+                            color: '#25D366',
+                            background: 'rgba(37, 211, 102, 0.08)',
+                            border: '1px solid rgba(37, 211, 102, 0.3)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            fontWeight: 600,
+                            textDecoration: 'none',
+                          }}
+                        >
+                          <MessageCircle size={13} /> WhatsApp
+                        </a>
 
                         {/* Edit Button */}
                         <button
@@ -1038,6 +1097,22 @@ const CustomersPage = () => {
                   >
                     <MessageSquare size={14} /> SMS
                   </button>
+                  <a
+                    href={getWhatsAppLink(c.phone, getCustomerReminderText(c))}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-ghost btn-sm"
+                    style={{
+                      color: '#25D366',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      textDecoration: 'none',
+                    }}
+                    title={`Send Due Reminder to ${c.name} via WhatsApp`}
+                  >
+                    <MessageCircle size={14} /> WhatsApp
+                  </a>
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm"
@@ -1683,22 +1758,48 @@ const CustomersPage = () => {
                             {form.phone && <span style={{ marginLeft: 6, color: 'var(--text-tertiary)' }}>→ to {form.phone}</span>}
                           </div>
 
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            disabled={isSendingPreview || !form.phone}
-                            onClick={handleSendPreviewSms}
-                            style={{
-                              height: 28,
-                              fontSize: '0.6875rem',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              gap: 5,
-                            }}
-                          >
-                            {isSendingPreview ? <div className="spinner" style={{ width: 12, height: 12 }} /> : <Send size={12} />}
-                            Send Test / Preview SMS
-                          </button>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              disabled={isSendingPreview || !form.phone}
+                              onClick={handleSendPreviewSms}
+                              style={{
+                                height: 28,
+                                fontSize: '0.6875rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                              }}
+                            >
+                              {isSendingPreview ? <div className="spinner" style={{ width: 12, height: 12 }} /> : <Send size={12} />}
+                              Send Test SMS
+                            </button>
+                            <a
+                              href={getWhatsAppLink(form.phone, finalAddModalSmsText)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{
+                                height: 28,
+                                fontSize: '0.6875rem',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 5,
+                                padding: '0 10px',
+                                borderRadius: 'var(--radius-sm)',
+                                background: 'rgba(37, 211, 102, 0.12)',
+                                border: '1px solid rgba(37, 211, 102, 0.35)',
+                                color: '#25D366',
+                                textDecoration: 'none',
+                                fontWeight: 600,
+                                pointerEvents: !form.phone ? 'none' : 'auto',
+                                opacity: !form.phone ? 0.5 : 1,
+                              }}
+                              title="Open in WhatsApp with this exact reminder message pre-filled"
+                            >
+                              <MessageCircle size={13} /> Send via WhatsApp
+                            </a>
+                          </div>
                         </div>
 
                         {/* Preview Sent Status Banner */}
@@ -2023,7 +2124,7 @@ const CustomersPage = () => {
               )}
             </div>
 
-            <div className="modal-footer">
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <button
                 type="button"
                 className="btn btn-secondary"
@@ -2031,16 +2132,37 @@ const CustomersPage = () => {
               >
                 Cancel
               </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={isSendingStandaloneSms}
-                onClick={() => handleSendStandaloneSms(false)}
-                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-              >
-                {isSendingStandaloneSms ? <div className="spinner" /> : <Send size={15} />}
-                Send Reminder SMS Now
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <a
+                  href={getWhatsAppLink(standaloneSmsCustomer?.phone, finalStandaloneSmsText)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-success"
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: '#25D366',
+                    borderColor: '#25D366',
+                    color: '#fff',
+                    fontWeight: 600,
+                    textDecoration: 'none',
+                  }}
+                  title="Open directly in WhatsApp with this exact message pre-typed"
+                >
+                  <MessageCircle size={15} /> Send via WhatsApp
+                </a>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={isSendingStandaloneSms}
+                  onClick={() => handleSendStandaloneSms(false)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                >
+                  {isSendingStandaloneSms ? <div className="spinner" /> : <Send size={15} />}
+                  Send Reminder SMS Now
+                </button>
+              </div>
             </div>
           </div>
         </div>
