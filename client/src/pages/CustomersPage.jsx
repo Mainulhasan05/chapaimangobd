@@ -1287,56 +1287,14 @@ const CustomersPage = () => {
 
                 {/* Notes */}
                 <div className="form-group">
-                  <label className="form-label">Internal Notes (Private)</label>
+                  <label className="form-label">Notes</label>
                   <textarea
                     className="form-textarea"
-                    placeholder="Private notes for staff..."
+                    placeholder="Notes about customer, preferences, or special instructions..."
                     rows={2}
                     value={form.notes}
                     onChange={(e) => setForm({ ...form, notes: e.target.value })}
                   />
-                </div>
-
-                {/* Collapsible Additional Details */}
-                <div>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    onClick={() => setShowExtraFields(!showExtraFields)}
-                    style={{
-                      padding: 0,
-                      fontSize: '0.75rem',
-                      color: 'var(--text-tertiary)',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                    }}
-                  >
-                    {showExtraFields ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                    {showExtraFields ? 'Hide additional fields' : 'More options (Alt Phone, Area / Zone)'}
-                  </button>
-
-                  {showExtraFields && (
-                    <div className="form-row" style={{ marginTop: 8 }}>
-                      <div style={{ flex: 1 }}>
-                        <PhoneInput
-                          label="Alternative Phone"
-                          value={form.altPhone}
-                          onChange={(val) => setForm({ ...form, altPhone: val })}
-                          required={false}
-                        />
-                      </div>
-                      <div className="form-group" style={{ flex: 1 }}>
-                        <label className="form-label">Area / Zone</label>
-                        <input
-                          className="form-input"
-                          placeholder="e.g. Dhanmondi, Gulshan"
-                          value={form.area}
-                          onChange={(e) => setForm({ ...form, area: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {/* ========================================================
