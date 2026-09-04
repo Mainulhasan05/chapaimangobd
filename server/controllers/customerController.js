@@ -3,7 +3,7 @@ import Order from '../models/Order.js';
 import Payment from '../models/Payment.js';
 import SmsLog from '../models/SmsLog.js';
 import Setting from '../models/Setting.js';
-import { sendSms } from '../utils/smsService.js';
+import { sendSms, cleanSmsText } from '../utils/smsService.js';
 import { calculateSmsCredits } from './smsController.js';
 import { createAuditLog } from '../utils/auditLogger.js';
 
@@ -174,7 +174,7 @@ export const createCustomer = async (req, res, next) => {
     let smsResult = null;
     if (shouldSendSms && smsMessage && smsMessage.trim()) {
       try {
-        const trimmedMessage = smsMessage.trim();
+        const trimmedMessage = cleanSmsText(smsMessage);
         const customSenderId = await Setting.get('smsSenderId', process.env.SMS_SENDER_ID || '8809617639998');
         const sendRes = await sendSms({ to: cleanPhone, message: trimmedMessage });
         const stats = calculateSmsCredits(trimmedMessage);

@@ -39,18 +39,23 @@ const templateVariables = [
 
 const sampleTemplates = [
   {
-    title: 'Gentle Due Reminder (Official)',
+    title: 'Gentle Due Reminder (Standard)',
     text: `Just a gentle reminder from chapaimango.bd
-
 Outstanding Due: BDT {totalDue}
 
-We would really appreciate it if you could clear the payment by 15 September 2026.
+Please clear the payment by 15 September 2026.
+For bill & payment details, visit: {billUrl}
+For live support, WhatsApp us at 01717333880
 
-For bill & payment details, please visit: xxxxxxxxxx
-
-For live support, WhatsApp us at  01717333880
-
-Thank you for your continued support.`,
+-Chapai Mango Team`,
+  },
+  {
+    title: 'Due Reminder (1-SMS Cost Saver)',
+    text: `chapaimango.bd Due Reminder
+Due: BDT {totalDue}
+Pay by: 15 Sep 2026
+Bill: {billUrl}
+WhatsApp: 01717333880`,
   },
   {
     title: 'অর্ডার নিশ্চিতকরণ (Confirmation)',

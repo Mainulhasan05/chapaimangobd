@@ -18,8 +18,6 @@ import {
   Trash2,
   Send,
   CheckCircle,
-  ChevronDown,
-  ChevronUp,
   FileText,
   Copy,
   Check,
@@ -32,23 +30,39 @@ import toast from 'react-hot-toast';
 import ConfirmModal from '../components/ConfirmModal';
 import PhoneInput, { isBDPhoneValid } from '../components/PhoneInput';
 
-// Standard Client Due Reminder SMS Template
-const DEFAULT_REMINDER_TEMPLATE = `Just a gentle reminder from chapaimango.bd
+// Helper to sanitize SMS text: collapses multiple spaces, strips trailing whitespace, eliminates excess blank lines
+const cleanSmsText = (text) => {
+  if (!text) return '';
+  return text
+    .toString()
+    .split('\n')
+    .map((line) => line.trim().replace(/[ \t]+/g, ' '))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
 
+// Standard Due Reminder SMS Template (Well-spaced, no redundant blank lines, no double spaces)
+const DEFAULT_REMINDER_TEMPLATE = `Just a gentle reminder from chapaimango.bd
 Outstanding Due: BDT {due}
 
-We would really appreciate it if you could clear the payment by {deadline}.
-
-For bill & payment details, please visit: {billUrl}
-
-For live support, WhatsApp us at  {whatsappNumber}
+Please clear the payment by {deadline}.
+For bill & payment details, visit: {billUrl}
+For live support, WhatsApp us at {whatsappNumber}
 
 -Chapai Mango Team`;
+
+// Ultra-Compact 1-SMS Cost Saver Template (Fits in 1 SMS < 160 characters)
+const COMPACT_REMINDER_TEMPLATE = `chapaimango.bd Due Reminder
+Due: BDT {due}
+Pay by: {deadline}
+Bill: {billUrl}
+WhatsApp: {whatsappNumber}`;
 
 // Calculate character count and SMS tokens (GSM 03.40 / Unicode)
 const calculateSmsMetrics = (text) => {
   if (!text) return { charCount: 0, credits: 0, isUnicode: false };
-  const clean = text.toString();
+  const clean = cleanSmsText(text);
   const charCount = clean.length;
   const isUnicode = /[^\u0000-\u007F]/.test(clean);
   let credits = 1;
@@ -77,13 +91,14 @@ const getPublicBillUrl = (shortCode) => {
   return `${origin}/b/${shortCode}`;
 };
 
-// Replace dynamic placeholders
-const resolveReminderTemplate = ({ due, deadline, billUrl, whatsappNumber }) => {
-  return DEFAULT_REMINDER_TEMPLATE
+// Replace dynamic placeholders and clean spaces
+const resolveReminderTemplate = ({ due, deadline, billUrl, whatsappNumber }, template = DEFAULT_REMINDER_TEMPLATE) => {
+  const resolved = template
     .replace('{due}', due || '0')
     .replace('{deadline}', deadline || '15 September 2026')
     .replace('{billUrl}', billUrl || 'xxxxxxxxxx')
     .replace('{whatsappNumber}', whatsappNumber || '01717333880');
+  return cleanSmsText(resolved);
 };
 
 const CustomersPage = () => {
@@ -108,6 +123,7 @@ const CustomersPage = () => {
     directEdit: false,
     customText: '',
   });
+  const [standaloneSmsTemplateType, setStandaloneSmsTemplateType] = useState('standard');
   const [isSendingStandaloneSms, setIsSendingStandaloneSms] = useState(false);
   const [standalonePreviewHistory, setStandalonePreviewHistory] = useState(null);
 
@@ -130,6 +146,7 @@ const CustomersPage = () => {
   const fileInputRef = useRef(null);
 
   // SMS Reminder Section in Customer Modal
+  const [smsTemplateType, setSmsTemplateType] = useState('standard');
   const [smsEnabled, setSmsEnabled] = useState(true);
   const [smsDueCustomized, setSmsDueCustomized] = useState(false);
   const [smsDue, setSmsDue] = useState('');
@@ -155,33 +172,41 @@ const CustomersPage = () => {
 
   // Calculate resolved text for Add/Edit modal
   const finalAddModalSmsText = useMemo(() => {
-    if (isDirectEdit) return customMessage;
+    if (isDirectEdit) return cleanSmsText(customMessage);
     const dueDisplay = smsDueCustomized
       ? smsDue
       : form.currentDue
       ? Number(form.currentDue).toLocaleString('en-BD')
       : '0';
     const resolvedUrl = smsBillUrl || getPublicBillUrl(form.billShortCode);
-    return resolveReminderTemplate({
-      due: dueDisplay,
-      deadline: smsDeadline,
-      billUrl: resolvedUrl,
-      whatsappNumber: smsWhatsapp,
-    });
-  }, [isDirectEdit, customMessage, smsDueCustomized, smsDue, form.currentDue, form.billShortCode, smsDeadline, smsBillUrl, smsWhatsapp]);
+    const activeTemplate = smsTemplateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
+    return resolveReminderTemplate(
+      {
+        due: dueDisplay,
+        deadline: smsDeadline,
+        billUrl: resolvedUrl,
+        whatsappNumber: smsWhatsapp,
+      },
+      activeTemplate
+    );
+  }, [isDirectEdit, customMessage, smsDueCustomized, smsDue, form.currentDue, smsBillUrl, form.billShortCode, smsDeadline, smsWhatsapp, smsTemplateType]);
 
   const addModalSmsMetrics = useMemo(() => calculateSmsMetrics(finalAddModalSmsText), [finalAddModalSmsText]);
 
   // Calculate resolved text for standalone SMS modal
   const finalStandaloneSmsText = useMemo(() => {
-    if (standaloneSmsForm.directEdit) return standaloneSmsForm.customText;
-    return resolveReminderTemplate({
-      due: standaloneSmsForm.due,
-      deadline: standaloneSmsForm.deadline,
-      billUrl: standaloneSmsForm.billUrl,
-      whatsappNumber: standaloneSmsForm.whatsappNumber,
-    });
-  }, [standaloneSmsForm]);
+    if (standaloneSmsForm.directEdit) return cleanSmsText(standaloneSmsForm.customText);
+    const activeTemplate = standaloneSmsTemplateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
+    return resolveReminderTemplate(
+      {
+        due: standaloneSmsForm.due,
+        deadline: standaloneSmsForm.deadline,
+        billUrl: standaloneSmsForm.billUrl,
+        whatsappNumber: standaloneSmsForm.whatsappNumber,
+      },
+      activeTemplate
+    );
+  }, [standaloneSmsForm, standaloneSmsTemplateType]);
 
   const standaloneSmsMetrics = useMemo(() => calculateSmsMetrics(finalStandaloneSmsText), [finalStandaloneSmsText]);
 
@@ -1422,31 +1447,98 @@ const CustomersPage = () => {
                           </div>
                         </div>
 
-                        {/* Direct edit toggle */}
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
-                            SMS Preview:
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!isDirectEdit) {
-                                setCustomMessage(finalAddModalSmsText);
-                              }
-                              setIsDirectEdit(!isDirectEdit);
-                            }}
-                            style={{
-                              background: 'none',
-                              border: 'none',
-                              color: 'var(--accent-secondary)',
-                              fontSize: '0.6875rem',
-                              cursor: 'pointer',
-                              textDecoration: 'underline',
-                              padding: 0,
-                            }}
-                          >
-                            {isDirectEdit ? 'Reset to Dynamic Resolver' : 'Directly edit message text'}
-                          </button>
+                        {/* Format Mode Selector & Direct Edit Toggle */}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>
+                              Format:
+                            </span>
+                            <div style={{ display: 'inline-flex', background: 'rgba(255, 255, 255, 0.05)', borderRadius: 6, padding: 2 }}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSmsTemplateType('standard');
+                                  if (isDirectEdit) setIsDirectEdit(false);
+                                }}
+                                style={{
+                                  border: 'none',
+                                  padding: '2px 8px',
+                                  fontSize: '0.6875rem',
+                                  fontWeight: 600,
+                                  borderRadius: 4,
+                                  cursor: 'pointer',
+                                  background: smsTemplateType === 'standard' && !isDirectEdit ? 'var(--accent-secondary)' : 'transparent',
+                                  color: smsTemplateType === 'standard' && !isDirectEdit ? '#fff' : 'var(--text-secondary)',
+                                }}
+                              >
+                                Standard (2 SMS)
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSmsTemplateType('compact');
+                                  if (isDirectEdit) setIsDirectEdit(false);
+                                }}
+                                style={{
+                                  border: 'none',
+                                  padding: '2px 8px',
+                                  fontSize: '0.6875rem',
+                                  fontWeight: 600,
+                                  borderRadius: 4,
+                                  cursor: 'pointer',
+                                  background: smsTemplateType === 'compact' && !isDirectEdit ? '#10b981' : 'transparent',
+                                  color: smsTemplateType === 'compact' && !isDirectEdit ? '#fff' : 'var(--text-secondary)',
+                                }}
+                              >
+                                ⚡ 1-SMS Saver (1 SMS)
+                              </button>
+                            </div>
+                          </div>
+
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            {isDirectEdit && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setCustomMessage(cleanSmsText(customMessage));
+                                  toast.success('Extra spaces removed!');
+                                }}
+                                style={{
+                                  background: 'rgba(16, 185, 129, 0.12)',
+                                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                                  color: '#10b981',
+                                  fontSize: '0.6875rem',
+                                  borderRadius: 4,
+                                  padding: '2px 8px',
+                                  cursor: 'pointer',
+                                  fontWeight: 600,
+                                }}
+                              >
+                                Clean Extra Spaces
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (!isDirectEdit) {
+                                  setCustomMessage(finalAddModalSmsText);
+                                }
+                                setIsDirectEdit(!isDirectEdit);
+                              }}
+                              style={{
+                                background: 'none',
+                                border: 'none',
+                                color: 'var(--accent-secondary)',
+                                fontSize: '0.6875rem',
+                                cursor: 'pointer',
+                                textDecoration: 'underline',
+                                padding: 0,
+                              }}
+                            >
+                              {isDirectEdit ? 'Reset to Dynamic Resolver' : 'Directly edit message text'}
+                            </button>
+                          </div>
                         </div>
 
                         {/* Live Message Preview / Direct Editor */}
@@ -1679,32 +1771,102 @@ const CustomersPage = () => {
                 </div>
               </div>
 
-              {/* Direct edit toggle */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
-                  Message Preview:
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!standaloneSmsForm.directEdit) {
-                      setStandaloneSmsForm({ ...standaloneSmsForm, directEdit: true, customText: finalStandaloneSmsText });
-                    } else {
-                      setStandaloneSmsForm({ ...standaloneSmsForm, directEdit: false });
-                    }
-                  }}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'var(--accent-secondary)',
-                    fontSize: '0.6875rem',
-                    cursor: 'pointer',
-                    textDecoration: 'underline',
-                    padding: 0,
-                  }}
-                >
-                  {standaloneSmsForm.directEdit ? 'Reset to Dynamic Resolver' : 'Direct edit text'}
-                </button>
+              {/* Format Mode Selector & Direct Edit Toggle */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>
+                    Format:
+                  </span>
+                  <div style={{ display: 'inline-flex', background: 'rgba(255, 255, 255, 0.05)', borderRadius: 6, padding: 2 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStandaloneSmsTemplateType('standard');
+                        if (standaloneSmsForm.directEdit) setStandaloneSmsForm({ ...standaloneSmsForm, directEdit: false });
+                      }}
+                      style={{
+                        border: 'none',
+                        padding: '2px 8px',
+                        fontSize: '0.6875rem',
+                        fontWeight: 600,
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        background: standaloneSmsTemplateType === 'standard' && !standaloneSmsForm.directEdit ? 'var(--accent-secondary)' : 'transparent',
+                        color: standaloneSmsTemplateType === 'standard' && !standaloneSmsForm.directEdit ? '#fff' : 'var(--text-secondary)',
+                      }}
+                    >
+                      Standard (2 SMS)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStandaloneSmsTemplateType('compact');
+                        if (standaloneSmsForm.directEdit) setStandaloneSmsForm({ ...standaloneSmsForm, directEdit: false });
+                      }}
+                      style={{
+                        border: 'none',
+                        padding: '2px 8px',
+                        fontSize: '0.6875rem',
+                        fontWeight: 600,
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        background: standaloneSmsTemplateType === 'compact' && !standaloneSmsForm.directEdit ? '#10b981' : 'transparent',
+                        color: standaloneSmsTemplateType === 'compact' && !standaloneSmsForm.directEdit ? '#fff' : 'var(--text-secondary)',
+                      }}
+                    >
+                      ⚡ 1-SMS Saver (1 SMS)
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {standaloneSmsForm.directEdit && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStandaloneSmsForm({
+                          ...standaloneSmsForm,
+                          customText: cleanSmsText(standaloneSmsForm.customText),
+                        });
+                        toast.success('Extra spaces removed!');
+                      }}
+                      style={{
+                        background: 'rgba(16, 185, 129, 0.12)',
+                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        color: '#10b981',
+                        fontSize: '0.6875rem',
+                        borderRadius: 4,
+                        padding: '2px 8px',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                      }}
+                    >
+                      Clean Extra Spaces
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!standaloneSmsForm.directEdit) {
+                        setStandaloneSmsForm({ ...standaloneSmsForm, directEdit: true, customText: finalStandaloneSmsText });
+                      } else {
+                        setStandaloneSmsForm({ ...standaloneSmsForm, directEdit: false });
+                      }
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--accent-secondary)',
+                      fontSize: '0.6875rem',
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                      padding: 0,
+                    }}
+                  >
+                    {standaloneSmsForm.directEdit ? 'Reset to Dynamic Resolver' : 'Direct edit text'}
+                  </button>
+                </div>
               </div>
 
               {/* Preview Box */}

@@ -13,6 +13,18 @@ export const isUnicode = (text) => {
   return /[^\u0000-\u007F]/.test(text);
 };
 
+// Helper to sanitize SMS text by removing accidental multiple spaces, tabs, and excess blank lines
+export const cleanSmsText = (text) => {
+  if (!text) return '';
+  return text
+    .toString()
+    .split('\n')
+    .map((line) => line.trim().replace(/[ \t]+/g, ' '))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
 // Helper to format Bangladesh phone number
 export const formatMsisdn = (phone) => {
   if (!phone) return '';
@@ -117,23 +129,25 @@ export const sendSms = async ({ to, message }) => {
     };
   }
 
+  const sanitizedMessage = cleanSmsText(message);
+
   // If no API key configured (development mode simulation)
   if (!apiKey || apiKey === 'your_sms_api_key' || apiKey === 'your_automas_api_key_here') {
-    console.log(`[AUTOMAS SIMULATION] To: ${msisdn} | Sender: ${senderId} | SMS: "${message}"`);
+    console.log(`[AUTOMAS SIMULATION] To: ${msisdn} | Sender: ${senderId} | SMS: "${sanitizedMessage}"`);
     return {
       success: true,
       simulation: true,
-      response: { status: 'SIMULATED_SUCCESS', msisdn, message },
+      response: { status: 'SIMULATED_SUCCESS', msisdn, message: sanitizedMessage },
     };
   }
 
-  const unicode = isUnicode(message);
+  const unicode = isUnicode(sanitizedMessage);
 
   const queryParams = {
     apikey: apiKey,
     sender: senderId,
     msisdn: msisdn,
-    smstext: message,
+    smstext: sanitizedMessage,
   };
 
   if (unicode) {

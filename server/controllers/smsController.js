@@ -2,7 +2,7 @@ import axios from 'axios';
 import Customer from '../models/Customer.js';
 import SmsLog from '../models/SmsLog.js';
 import Setting from '../models/Setting.js';
-import { sendSms, sendBulkDynamicSms } from '../utils/smsService.js';
+import { sendSms, sendBulkDynamicSms, cleanSmsText } from '../utils/smsService.js';
 import { createAuditLog } from '../utils/auditLogger.js';
 
 // Template variable resolver
@@ -24,7 +24,7 @@ const appendFooterIfConfigured = (text, footer = 'ChapaiMango.bd', append = true
 // Calculate SMS token credits according to GSM and Unicode standards
 export const calculateSmsCredits = (text) => {
   if (!text) return { charCount: 0, credits: 0, isUnicode: false };
-  const clean = text.toString();
+  const clean = cleanSmsText(text);
   const charCount = clean.length;
   const isUnicode = /[^\u0000-\u007F]/.test(clean);
   let credits = 1;
