@@ -3,7 +3,7 @@ import Order from '../models/Order.js';
 import Payment from '../models/Payment.js';
 import SmsLog from '../models/SmsLog.js';
 import Setting from '../models/Setting.js';
-import { sendSms, cleanSmsText } from '../utils/smsService.js';
+import { sendSms, sendBulkDynamicSms, cleanSmsText } from '../utils/smsService.js';
 import { calculateSmsCredits } from './smsController.js';
 import { createAuditLog } from '../utils/auditLogger.js';
 import path from 'path';
@@ -722,6 +722,207 @@ export const deleteCustomer = async (req, res, next) => {
     res.status(200).json({
       success: true,
       message: `Customer ${customer.name} deleted successfully`,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Send bulk due reminder SMS to all or filtered customers in one click
+// @route   POST /api/customers/send-bulk-reminders
+export const sendBulkDueReminders = async (req, res, next) => {
+  try {
+    const {
+      target = 'due_only', // 'due_only' | 'all' | 'selected'
+      customerIds = [],
+      templateType = 'compact', // 'compact' | 'standard'
+      customTemplate,
+      deadline = '15 September 2026',
+      whatsappNumber = '01717333880',
+    } = req.body;
+
+    const query = {};
+    if (target === 'due_only') {
+      query.totalDue = { $gt: 0 };
+    } else if (target === 'selected' && Array.isArray(customerIds) && customerIds.length > 0) {
+      query._id = { $in: customerIds };
+    }
+
+    const customers = await Customer.find(query);
+
+    if (!customers || customers.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message:
+          target === 'due_only'
+            ? 'No customers with standing due found'
+            : 'No customers found to dispatch reminders',
+      });
+    }
+
+    const origin = process.env.CLIENT_URL
+      ? process.env.CLIENT_URL.split(',')[0].trim().replace(/\/+$/, '')
+      : 'https://billing.parlorprobd.com';
+
+    const customSenderId = await Setting.get(
+      'smsSenderId',
+      process.env.SMS_SENDER_ID || '8809617639998'
+    );
+
+    // Base template
+    const baseTemplate =
+      customTemplate && customTemplate.trim()
+        ? customTemplate
+        : templateType === 'standard'
+        ? `Just a gentle reminder from chapaimango.bd
+Outstanding Due: BDT {due}
+
+Please clear the payment by {deadline}.
+For bill & payment details, visit: {billUrl}
+For live support, WhatsApp us at {whatsappNumber}
+
+-Chapai Mango Team`
+        : `chapaimango.bd Due Reminder
+Due: BDT {due}
+Pay by: {deadline}
+Bill: {billUrl}
+WhatsApp: {whatsappNumber}`;
+
+    const recipients = [];
+    const smsItems = [];
+    let calculatedTotalCredits = 0;
+
+    for (const customer of customers) {
+      if (!customer.phone) continue;
+
+      let code = customer.billShortCode;
+      if (!code) {
+        code = await generateUniqueShortCode();
+        customer.billShortCode = code;
+        await customer.save();
+      }
+
+      const billUrl = `${origin}/b/${code}`;
+      const dueFormatted = Number(customer.totalDue || 0).toLocaleString('en-BD');
+
+      const resolvedText = cleanSmsText(
+        baseTemplate
+          .replace(/\{due\}/g, dueFormatted)
+          .replace(/\{deadline\}/g, deadline)
+          .replace(/\{billUrl\}/g, billUrl)
+          .replace(/\{whatsappNumber\}/g, whatsappNumber)
+          .replace(/\{name\}/g, customer.name || '')
+      );
+
+      const stats = calculateSmsCredits(resolvedText);
+      calculatedTotalCredits += stats.credits;
+
+      recipients.push({
+        customer: customer._id,
+        phone: customer.phone,
+        name: customer.name,
+      });
+
+      smsItems.push({
+        customer: customer._id,
+        phone: customer.phone,
+        name: customer.name,
+        text: resolvedText,
+        charCount: stats.charCount,
+        credits: stats.credits,
+        isUnicode: stats.isUnicode,
+      });
+    }
+
+    if (smsItems.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'None of the selected customers have a valid phone number',
+      });
+    }
+
+    // Execute bulk dynamic dispatch through Automas Gateway
+    const sendResults = await sendBulkDynamicSms(smsItems);
+
+    let totalSent = 0;
+    let totalFailed = 0;
+    const resolvedTexts = [];
+    const successfulCustomerIds = [];
+
+    sendResults.forEach((r, idx) => {
+      const item = smsItems[idx];
+      if (r.status === 'sent') {
+        totalSent++;
+        if (item?.customer) successfulCustomerIds.push(item.customer);
+      } else {
+        totalFailed++;
+      }
+
+      resolvedTexts.push({
+        name: item.name || '',
+        phone: r.phone,
+        text: r.text,
+        charCount: item.charCount || r.text.length,
+        credits: item.credits || 1,
+        isUnicode: item.isUnicode || false,
+        status: r.status,
+        error: r.error,
+      });
+    });
+
+    // Create SMS Log
+    const smsLog = await SmsLog.create({
+      recipients,
+      template: baseTemplate,
+      resolvedTexts,
+      totalCredits: calculatedTotalCredits,
+      senderId: customSenderId || process.env.SMS_SENDER_ID || '8809617639998',
+      totalSent,
+      totalFailed,
+      status: totalFailed === 0 ? 'sent' : totalSent === 0 ? 'failed' : 'partial',
+    });
+
+    // Update customer stats
+    if (successfulCustomerIds.length > 0) {
+      await Customer.updateMany(
+        { _id: { $in: successfulCustomerIds } },
+        {
+          $inc: { totalSmsSent: 1 },
+          $set: { lastSmsSentAt: new Date() },
+        }
+      );
+    }
+
+    // Audit log
+    await createAuditLog({
+      req,
+      action: 'SMS_BULK_DUE_REMINDER',
+      category: 'SMS',
+      description: `Dispatched bulk due reminders to ${recipients.length} customers (${totalSent} sent, ${totalFailed} failed)`,
+      targetId: smsLog._id,
+      targetType: 'SMS',
+      status: totalFailed === 0 ? 'SUCCESS' : 'PARTIAL',
+      details: {
+        totalRecipients: recipients.length,
+        totalSent,
+        totalFailed,
+        totalCredits: calculatedTotalCredits,
+        target,
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: `Due reminder SMS dispatched to ${totalSent} customers${
+        totalFailed > 0 ? ` (${totalFailed} failed)` : ''
+      }`,
+      data: {
+        totalRecipients: recipients.length,
+        totalSent,
+        totalFailed,
+        totalCredits: calculatedTotalCredits,
+        logId: smsLog._id,
+      },
     });
   } catch (error) {
     next(error);

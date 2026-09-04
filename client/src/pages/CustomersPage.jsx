@@ -26,6 +26,8 @@ import {
   Upload,
   Image as ImageIcon,
   Link as LinkIcon,
+  Users,
+  Zap,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../components/ConfirmModal';
@@ -146,6 +148,17 @@ const CustomersPage = () => {
   const [isSendingStandaloneSms, setIsSendingStandaloneSms] = useState(false);
   const [standalonePreviewHistory, setStandalonePreviewHistory] = useState(null);
 
+  // Bulk Due Reminder State
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkTarget, setBulkTarget] = useState('due_only'); // 'due_only' | 'all' | 'selected'
+  const [bulkTemplateType, setBulkTemplateType] = useState('compact');
+  const [bulkDeadline, setBulkDeadline] = useState('15 September 2026');
+  const [bulkWhatsapp, setBulkWhatsapp] = useState('01717333880');
+  const [bulkDirectEdit, setBulkDirectEdit] = useState(false);
+  const [bulkCustomText, setBulkCustomText] = useState('');
+  const [isSendingBulk, setIsSendingBulk] = useState(false);
+  const [selectedCustomerIds, setSelectedCustomerIds] = useState([]);
+
   // Primary Customer Form State
   const [form, setForm] = useState({
     name: '',
@@ -228,6 +241,83 @@ const CustomersPage = () => {
   }, [standaloneSmsForm, standaloneSmsTemplateType]);
 
   const standaloneSmsMetrics = useMemo(() => calculateSmsMetrics(finalStandaloneSmsText), [finalStandaloneSmsText]);
+
+  // Bulk Reminder Computed Metrics & Preview
+  const customersWithDueCount = useMemo(() => {
+    return customers.filter((c) => (c.totalDue || 0) > 0).length;
+  }, [customers]);
+
+  const totalDueAmount = useMemo(() => {
+    return customers.reduce((sum, c) => sum + (c.totalDue || 0), 0);
+  }, [customers]);
+
+  const sampleCustomer = useMemo(() => {
+    if (customers.length > 0) {
+      const withDue = customers.find((c) => (c.totalDue || 0) > 0);
+      return withDue || customers[0];
+    }
+    return { name: 'Customer Name', totalDue: 8760, billShortCode: 'sample', phone: '017XXXXXXXX' };
+  }, [customers]);
+
+  const bulkPreviewText = useMemo(() => {
+    if (bulkDirectEdit) return cleanSmsText(bulkCustomText);
+    const activeTemplate = bulkTemplateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
+    const due = sampleCustomer.totalDue ? Number(sampleCustomer.totalDue).toLocaleString('en-BD') : '8,760';
+    const billUrl = getPublicBillUrl(sampleCustomer.billShortCode || 'sample');
+    return resolveReminderTemplate(
+      {
+        due,
+        deadline: bulkDeadline,
+        billUrl,
+        whatsappNumber: bulkWhatsapp,
+      },
+      activeTemplate
+    );
+  }, [bulkDirectEdit, bulkCustomText, bulkTemplateType, bulkDeadline, bulkWhatsapp, sampleCustomer]);
+
+  const bulkMetrics = useMemo(() => calculateSmsMetrics(bulkPreviewText), [bulkPreviewText]);
+
+  const handleToggleSelectAll = () => {
+    if (selectedCustomerIds.length === customers.length) {
+      setSelectedCustomerIds([]);
+    } else {
+      setSelectedCustomerIds(customers.map((c) => c._id));
+    }
+  };
+
+  const handleToggleCustomer = (id) => {
+    setSelectedCustomerIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleSendBulkReminders = async () => {
+    setIsSendingBulk(true);
+    try {
+      const payload = {
+        target: bulkTarget,
+        customerIds: bulkTarget === 'selected' ? selectedCustomerIds : [],
+        templateType: bulkTemplateType,
+        customTemplate: bulkDirectEdit ? bulkCustomText : undefined,
+        deadline: bulkDeadline,
+        whatsappNumber: bulkWhatsapp,
+      };
+
+      const res = await customerAPI.sendBulkReminders(payload);
+      toast.success(res.data?.message || 'Bulk due reminders dispatched successfully!');
+      setShowBulkModal(false);
+      setSelectedCustomerIds([]);
+
+      queryClient.invalidateQueries({ queryKey: ['customers'] });
+      queryClient.invalidateQueries({ queryKey: ['sms-history'] });
+      queryClient.invalidateQueries({ queryKey: ['sms-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to dispatch bulk reminders');
+    } finally {
+      setIsSendingBulk(false);
+    }
+  };
 
   // Create Customer Mutation
   const createMutation = useMutation({
@@ -577,7 +667,28 @@ const CustomersPage = () => {
             {pagination.total || 0} customer records • Track bills, dues, unique bill links & SMS reminders
           </p>
         </div>
-        <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+        <div style={{ display: 'flex', gap: 'var(--space-sm)', flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-primary"
+            onClick={() => {
+              setBulkTarget(selectedCustomerIds.length > 0 ? 'selected' : 'due_only');
+              setShowBulkModal(true);
+            }}
+            style={{
+              background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+              borderColor: '#10b981',
+              color: '#fff',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              fontWeight: 600,
+              boxShadow: '0 2px 8px rgba(16, 185, 129, 0.25)',
+            }}
+            title="Send due reminder SMS to all customers in 1 click"
+          >
+            <Send size={16} />
+            Send Due Reminder to All {selectedCustomerIds.length > 0 ? `(${selectedCustomerIds.length} Selected)` : ''}
+          </button>
           <button className="btn btn-secondary" onClick={() => navigate('/import')}>
             <FileSpreadsheet size={18} />
             Import Excel
@@ -639,11 +750,72 @@ const CustomersPage = () => {
         </div>
       ) : (
         <>
+          {/* Selected Customers Action Bar */}
+          {selectedCustomerIds.length > 0 && (
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                background: 'rgba(16, 185, 129, 0.12)',
+                border: '1px solid rgba(16, 185, 129, 0.35)',
+                padding: '8px 14px',
+                borderRadius: 'var(--radius-md)',
+                marginBottom: 'var(--space-md)',
+                flexWrap: 'wrap',
+                gap: 8,
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.8125rem' }}>
+                  {selectedCustomerIds.length} customer{selectedCustomerIds.length > 1 ? 's' : ''} selected
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setSelectedCustomerIds([])}
+                  style={{ fontSize: '0.75rem', height: 26, padding: '0 8px', color: 'var(--text-secondary)' }}
+                >
+                  Deselect all
+                </button>
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => {
+                  setBulkTarget('selected');
+                  setShowBulkModal(true);
+                }}
+                style={{
+                  background: '#10b981',
+                  borderColor: '#10b981',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  fontWeight: 600,
+                  fontSize: '0.75rem',
+                  height: 30,
+                }}
+              >
+                <Send size={13} /> Send Due Reminder to Selected ({selectedCustomerIds.length})
+              </button>
+            </div>
+          )}
+
           {/* Desktop Table */}
           <div className="table-container desktop-customers-table">
             <table className="table customers-table">
               <thead>
                 <tr>
+                  <th style={{ width: 44, textAlign: 'center' }}>
+                    <input
+                      type="checkbox"
+                      checked={customers.length > 0 && selectedCustomerIds.length === customers.length}
+                      onChange={handleToggleSelectAll}
+                      style={{ cursor: 'pointer', width: 16, height: 16 }}
+                      title="Select all customers on page"
+                    />
+                  </th>
                   <th style={{ minWidth: 200 }}>Customer</th>
                   <th style={{ minWidth: 150 }}>Phone & SMS</th>
                   <th style={{ textAlign: 'right', minWidth: 110 }}>Total Bill</th>
@@ -656,7 +828,15 @@ const CustomersPage = () => {
               </thead>
               <tbody>
                 {customers.map((c) => (
-                  <tr key={c._id}>
+                  <tr key={c._id} style={{ background: selectedCustomerIds.includes(c._id) ? 'rgba(16, 185, 129, 0.04)' : undefined }}>
+                    <td style={{ textAlign: 'center', width: 44 }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedCustomerIds.includes(c._id)}
+                        onChange={() => handleToggleCustomer(c._id)}
+                        style={{ cursor: 'pointer', width: 16, height: 16 }}
+                      />
+                    </td>
                     <td>
                       <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{c.name}</div>
                       <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 4, marginTop: 2 }}>
@@ -2163,6 +2343,379 @@ const CustomersPage = () => {
                   Send Reminder SMS Now
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================
+          BULK DUE REMINDER MODAL (SEND TO ALL IN 1 CLICK)
+         ======================================================== */}
+      {showBulkModal && (
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: 560 }}>
+            <div className="modal-header">
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 6,
+                      background: 'rgba(16, 185, 129, 0.15)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: '#10b981',
+                    }}
+                  >
+                    <Send size={16} />
+                  </div>
+                  <h2 className="modal-title" style={{ fontSize: '1.125rem' }}>
+                    Send Due Reminder to All
+                  </h2>
+                </div>
+                <p className="card-subtitle" style={{ marginTop: 3 }}>
+                  1-Click personalized bulk SMS blast • Each customer receives their own due & bill link
+                </p>
+              </div>
+              <button
+                className="btn btn-ghost btn-icon btn-sm"
+                onClick={() => setShowBulkModal(false)}
+                disabled={isSendingBulk}
+                title="Close"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* Target Audience Selector */}
+              <div>
+                <label style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-secondary)', display: 'block', marginBottom: 6 }}>
+                  Target Recipients
+                </label>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                    gap: 8,
+                  }}
+                >
+                  <label
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 4,
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: bulkTarget === 'due_only' ? '1.5px solid #10b981' : '1px solid var(--border)',
+                      background: bulkTarget === 'due_only' ? 'rgba(16, 185, 129, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input
+                        type="radio"
+                        name="bulkTarget"
+                        value="due_only"
+                        checked={bulkTarget === 'due_only'}
+                        onChange={(e) => setBulkTarget(e.target.value)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        Customers with Due
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.6875rem', color: '#10b981', marginLeft: 20 }}>
+                      Recommended (Total Due &gt; 0)
+                    </span>
+                  </label>
+
+                  {selectedCustomerIds.length > 0 && (
+                    <label
+                      style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 4,
+                        padding: '8px 12px',
+                        borderRadius: 'var(--radius-sm)',
+                        border: bulkTarget === 'selected' ? '1.5px solid var(--accent-secondary)' : '1px solid var(--border)',
+                        background: bulkTarget === 'selected' ? 'rgba(59, 130, 246, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <input
+                          type="radio"
+                          name="bulkTarget"
+                          value="selected"
+                          checked={bulkTarget === 'selected'}
+                          onChange={(e) => setBulkTarget(e.target.value)}
+                          style={{ cursor: 'pointer' }}
+                        />
+                        <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          Selected ({selectedCustomerIds.length})
+                        </span>
+                      </div>
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--accent-secondary)', marginLeft: 20 }}>
+                        Currently checked rows
+                      </span>
+                    </label>
+                  )}
+
+                  <label
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: 4,
+                      padding: '8px 12px',
+                      borderRadius: 'var(--radius-sm)',
+                      border: bulkTarget === 'all' ? '1.5px solid var(--accent-secondary)' : '1px solid var(--border)',
+                      background: bulkTarget === 'all' ? 'rgba(59, 130, 246, 0.08)' : 'rgba(255, 255, 255, 0.02)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <input
+                        type="radio"
+                        name="bulkTarget"
+                        value="all"
+                        checked={bulkTarget === 'all'}
+                        onChange={(e) => setBulkTarget(e.target.value)}
+                        style={{ cursor: 'pointer' }}
+                      />
+                      <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                        All Customers
+                      </span>
+                    </div>
+                    <span style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginLeft: 20 }}>
+                      Everyone in database
+                    </span>
+                  </label>
+                </div>
+              </div>
+
+              {/* Template Mode Selection */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>
+                    SMS Format:
+                  </span>
+                  <div style={{ display: 'inline-flex', background: 'rgba(255, 255, 255, 0.05)', borderRadius: 6, padding: 2 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBulkTemplateType('compact');
+                        if (bulkDirectEdit) setBulkDirectEdit(false);
+                      }}
+                      style={{
+                        border: 'none',
+                        padding: '3px 10px',
+                        fontSize: '0.6875rem',
+                        fontWeight: 600,
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        background: bulkTemplateType === 'compact' && !bulkDirectEdit ? '#10b981' : 'transparent',
+                        color: bulkTemplateType === 'compact' && !bulkDirectEdit ? '#fff' : 'var(--text-secondary)',
+                      }}
+                    >
+                      ⚡ 1-SMS Cost Saver (1 SMS)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBulkTemplateType('standard');
+                        if (bulkDirectEdit) setBulkDirectEdit(false);
+                      }}
+                      style={{
+                        border: 'none',
+                        padding: '3px 10px',
+                        fontSize: '0.6875rem',
+                        fontWeight: 600,
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                        background: bulkTemplateType === 'standard' && !bulkDirectEdit ? 'var(--accent-secondary)' : 'transparent',
+                        color: bulkTemplateType === 'standard' && !bulkDirectEdit ? '#fff' : 'var(--text-secondary)',
+                      }}
+                    >
+                      Standard (2 SMS)
+                    </button>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {bulkDirectEdit && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBulkCustomText(cleanSmsText(bulkCustomText));
+                        toast.success('Extra spaces removed!');
+                      }}
+                      style={{
+                        background: 'rgba(16, 185, 129, 0.12)',
+                        border: '1px solid rgba(16, 185, 129, 0.3)',
+                        color: '#10b981',
+                        fontSize: '0.6875rem',
+                        borderRadius: 4,
+                        padding: '2px 8px',
+                        cursor: 'pointer',
+                        fontWeight: 600,
+                      }}
+                    >
+                      Clean Extra Spaces
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!bulkDirectEdit) {
+                        setBulkDirectEdit(true);
+                        setBulkCustomText(bulkPreviewText);
+                      } else {
+                        setBulkDirectEdit(false);
+                      }
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: 'var(--accent-secondary)',
+                      fontSize: '0.6875rem',
+                      cursor: 'pointer',
+                      textDecoration: 'underline',
+                      padding: 0,
+                    }}
+                  >
+                    {bulkDirectEdit ? 'Reset to Dynamic Resolver' : 'Direct edit template'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Dynamic Variables Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <div>
+                  <label style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>
+                    Payment Deadline
+                  </label>
+                  <input
+                    className="form-input"
+                    style={{ height: 32, fontSize: '0.75rem' }}
+                    value={bulkDeadline}
+                    onChange={(e) => setBulkDeadline(e.target.value)}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>
+                    WhatsApp Live Support
+                  </label>
+                  <input
+                    className="form-input"
+                    style={{ height: 32, fontSize: '0.75rem' }}
+                    value={bulkWhatsapp}
+                    onChange={(e) => setBulkWhatsapp(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Dynamic Live Preview Box */}
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <label style={{ fontSize: '0.6875rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    Sample Live Preview ({sampleCustomer.name || 'Sample Customer'})
+                  </label>
+                  <span style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
+                    Dynamic: &#123;due&#125;, &#123;billUrl&#125;
+                  </span>
+                </div>
+
+                {bulkDirectEdit ? (
+                  <textarea
+                    className="form-textarea"
+                    rows={6}
+                    style={{ fontSize: '0.8125rem', fontFamily: 'monospace' }}
+                    value={bulkCustomText}
+                    onChange={(e) => setBulkCustomText(e.target.value)}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      background: '#0d1117',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '10px 12px',
+                      fontFamily: 'monospace',
+                      fontSize: '0.8125rem',
+                      lineHeight: 1.45,
+                      color: '#c9d1d9',
+                      whiteSpace: 'pre-wrap',
+                    }}
+                  >
+                    {bulkPreviewText}
+                  </div>
+                )}
+              </div>
+
+              {/* Character & Credit Metrics */}
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  fontSize: '0.6875rem',
+                  color: 'var(--text-secondary)',
+                  background: 'rgba(255,255,255,0.02)',
+                  padding: '6px 10px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <span>
+                  <strong>{bulkMetrics.charCount}</strong> chars •{' '}
+                  <strong style={{ color: bulkMetrics.credits === 1 ? 'var(--success)' : 'var(--accent-secondary)' }}>
+                    {bulkMetrics.credits} SMS credit{bulkMetrics.credits > 1 ? 's' : ''}
+                  </strong>{' '}
+                  per recipient ({bulkMetrics.isUnicode ? 'Unicode' : 'GSM'})
+                </span>
+                <span style={{ color: 'var(--text-tertiary)' }}>
+                  Zero wasted spaces • Auto-cleaned
+                </span>
+              </div>
+            </div>
+
+            <div className="modal-footer" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={isSendingBulk}
+                onClick={() => setShowBulkModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={isSendingBulk}
+                onClick={handleSendBulkReminders}
+                style={{
+                  background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+                  borderColor: '#10b981',
+                  color: '#fff',
+                  fontWeight: 600,
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  padding: '8px 18px',
+                }}
+              >
+                {isSendingBulk ? <div className="spinner" /> : <Send size={16} />}
+                {isSendingBulk
+                  ? 'Dispatching SMS Blast...'
+                  : bulkTarget === 'selected'
+                  ? `Send Due Reminder to Selected (${selectedCustomerIds.length})`
+                  : 'Send Due Reminder to All Now'}
+              </button>
             </div>
           </div>
         </div>

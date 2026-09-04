@@ -130,6 +130,7 @@ export const customerAPI = {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
   deleteBillImage: (data) => api.post('/customers/delete-image', data),
+  sendBulkReminders: (data) => api.post('/customers/send-bulk-reminders', data),
 };
 
 // ============================================

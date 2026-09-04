@@ -13,6 +13,7 @@ import {
   deleteBillImage,
   getBillImageDirect,
   getPublicCustomerBill,
+  sendBulkDueReminders,
 } from '../controllers/customerController.js';
 import { protect } from '../middleware/auth.js';
 import { BILLS_UPLOADS_DIR, ensureUploadDirs } from '../utils/fileStorage.js';
@@ -56,6 +57,7 @@ router.use(protect);
 
 router.post('/upload-image', uploadImage.single('image'), uploadBillImage);
 router.post('/delete-image', deleteBillImage);
+router.post('/send-bulk-reminders', sendBulkDueReminders);
 router.route('/').get(getCustomers).post(createCustomer);
 
 // Update and Delete routes supporting both standard methods and POST for cPanel/LiteSpeed compatibility
