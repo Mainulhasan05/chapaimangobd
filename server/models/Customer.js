@@ -72,6 +72,22 @@ const customerSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Public bill & payment link fields
+    billShortCode: {
+      type: String,
+      unique: true,
+      sparse: true,
+      index: true,
+      trim: true,
+    },
+    billDetailsText: {
+      type: String,
+      trim: true,
+    },
+    billImageUrl: {
+      type: String,
+      trim: true,
+    },
     status: {
       type: String,
       enum: ['active', 'inactive'],
@@ -81,10 +97,12 @@ const customerSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// On creation, initialize totalDue to openingBalance
+// On creation, initialize totalDue to openingBalance if not explicitly set
 customerSchema.pre('save', function (next) {
-  if (this.isNew && this.openingBalance > 0) {
-    this.totalDue = this.openingBalance;
+  if (this.isNew) {
+    if ((this.totalDue === undefined || this.totalDue === null) && this.openingBalance > 0) {
+      this.totalDue = this.openingBalance;
+    }
   }
   next();
 });

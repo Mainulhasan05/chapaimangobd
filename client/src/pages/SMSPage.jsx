@@ -39,6 +39,20 @@ const templateVariables = [
 
 const sampleTemplates = [
   {
+    title: 'Gentle Due Reminder (Official)',
+    text: `Just a gentle reminder from chapaimango.bd
+
+Outstanding Due: BDT {totalDue}
+
+We would really appreciate it if you could clear the payment by 15 September 2026.
+
+For bill & payment details, please visit: xxxxxxxxxx
+
+For live support, WhatsApp us at  01717333880
+
+Thank you for your continued support.`,
+  },
+  {
     title: 'অর্ডার নিশ্চিতকরণ (Confirmation)',
     text: 'প্রিয় {name}, chapaimango.bd-এ আপনার চাঁপাই আমের অর্ডারটি কনফার্ম হয়েছে। মোট বিল: {totalPurchases} টাকা, পরিশোধ: {totalPaid} টাকা, বকেয়া: {totalDue} টাকা। ধন্যবাদ!',
   },

@@ -66,9 +66,18 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
 }));
-app.use(express.json({ limit: '10mb' }));
+// Parse JSON payloads with strict: false so primitive/null payloads are accepted gracefully
+app.use(express.json({ limit: '10mb', strict: false }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+
+// Normalize req.body if client sent null or non-object primitive
+app.use((req, res, next) => {
+  if (req.body === null || req.body === undefined || typeof req.body !== 'object') {
+    req.body = {};
+  }
+  next();
+});
 
 // Method override for LiteSpeed / web hosts that restrict DELETE/PUT requests
 app.use((req, res, next) => {
@@ -97,9 +106,17 @@ app.get('/api/health', (req, res) => {
   res.status(200).json({ success: true, message: 'Server is running' });
 });
 
-// Serve frontend client SPA if client/dist exists
+// Static uploads directory for bill screenshots and memos
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const uploadsDir = path.join(__dirname, 'uploads');
+const billUploadsDir = path.join(uploadsDir, 'bills');
+if (!fs.existsSync(billUploadsDir)) {
+  fs.mkdirSync(billUploadsDir, { recursive: true });
+}
+app.use('/uploads', express.static(uploadsDir));
+
+// Serve frontend client SPA if client/dist exists
 const clientDist = path.join(__dirname, '../client/dist');
 
 if (fs.existsSync(clientDist)) {

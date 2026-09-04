@@ -60,12 +60,19 @@ export const customerAPI = {
   update: (id, data) => api.put(`/customers/${id}`, data),
   getLedger: (id, params) => api.get(`/customers/${id}/ledger`, { params }),
   recordPayment: (id, data) => api.post(`/customers/${id}/payment`, data),
-  delete: (id, params) =>
-    api.post(`/customers/${id}/delete`, null, { params }).catch((err) => {
+  delete: (id, params) => {
+    const payload = params || {};
+    return api.post(`/customers/${id}/delete`, payload, { params }).catch((err) => {
       if (err.response?.status === 404 || err.response?.status === 405) {
         return api.delete(`/customers/${id}`, { params });
       }
       throw err;
+    });
+  },
+  getPublicBill: (shortCode) => api.get(`/customers/public-bill/${shortCode}`),
+  uploadBillImage: (formData) =>
+    api.post('/customers/upload-image', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
     }),
 };
 
@@ -77,13 +84,15 @@ export const orderAPI = {
   getOne: (id) => api.get(`/orders/${id}`),
   create: (data) => api.post('/orders', data),
   update: (id, data) => api.put(`/orders/${id}`, data),
-  delete: (id) =>
-    api.post(`/orders/${id}/delete`).catch((err) => {
+  delete: (id, params) => {
+    const payload = params || {};
+    return api.post(`/orders/${id}/delete`, payload, { params }).catch((err) => {
       if (err.response?.status === 404 || err.response?.status === 405) {
-        return api.delete(`/orders/${id}`);
+        return api.delete(`/orders/${id}`, { params });
       }
       throw err;
-    }),
+    });
+  },
   addPayment: (id, data) => api.post(`/orders/${id}/payment`, data),
   getDailySummary: (params) => api.get('/orders/daily-summary', { params }),
 };

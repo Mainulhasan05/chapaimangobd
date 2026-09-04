@@ -1,6 +1,10 @@
 import Customer from '../models/Customer.js';
 import Order from '../models/Order.js';
 import Payment from '../models/Payment.js';
+import SmsLog from '../models/SmsLog.js';
+import Setting from '../models/Setting.js';
+import { sendSms } from '../utils/smsService.js';
+import { calculateSmsCredits } from './smsController.js';
 import { createAuditLog } from '../utils/auditLogger.js';
 
 /**
@@ -87,11 +91,42 @@ export const getCustomer = async (req, res, next) => {
   }
 };
 
+// Helper to generate unique 6-character short code for customer public bill URL
+export const generateUniqueShortCode = async () => {
+  const characters = '23456789abcdefghjkmnpqrstuvwxyz';
+  for (let attempt = 0; attempt < 10; attempt++) {
+    let code = '';
+    for (let i = 0; i < 6; i++) {
+      code += characters.charAt(Math.floor(Math.random() * characters.length));
+    }
+    const exists = await Customer.findOne({ billShortCode: code });
+    if (!exists) return code;
+  }
+  return Math.random().toString(36).substring(2, 8);
+};
+
 // @desc    Create customer
 // @route   POST /api/customers
 export const createCustomer = async (req, res, next) => {
   try {
-    const { name, phone, altPhone, address, area, openingBalance, notes } = req.body;
+    const {
+      name,
+      phone,
+      altPhone,
+      address,
+      area,
+      openingBalance,
+      notes,
+      totalBill,
+      totalPurchases,
+      currentDue,
+      totalDue,
+      billDetailsText,
+      billImageUrl,
+      billShortCode,
+      sendSms: shouldSendSms,
+      smsMessage,
+    } = req.body;
 
     const cleanPhone = normalizePhone(phone);
     if (!cleanPhone || cleanPhone.length !== 11 || !cleanPhone.startsWith('01')) {
@@ -109,32 +144,114 @@ export const createCustomer = async (req, res, next) => {
       });
     }
 
+    // Determine financial amounts (Total Bill and Current Due)
+    const billAmount = parseFloat(totalBill !== undefined ? totalBill : totalPurchases) || 0;
+    const dueAmount = parseFloat(currentDue !== undefined ? currentDue : (totalDue !== undefined ? totalDue : openingBalance)) || 0;
+    const paidAmount = Math.max(0, billAmount - dueAmount);
+
+    // Resolve or generate unique bill short code
+    let finalShortCode = billShortCode && billShortCode.trim() ? billShortCode.trim() : '';
+    if (!finalShortCode) {
+      finalShortCode = await generateUniqueShortCode();
+    }
+
     const customer = await Customer.create({
       name,
       phone: cleanPhone,
       altPhone: cleanAltPhone,
       address,
       area,
-      openingBalance: openingBalance || 0,
+      openingBalance: dueAmount,
+      totalDue: dueAmount,
+      totalPurchases: billAmount,
+      totalPaid: paidAmount,
       notes,
+      billShortCode: finalShortCode,
+      billDetailsText: billDetailsText || '',
+      billImageUrl: billImageUrl || '',
     });
+
+    let smsResult = null;
+    if (shouldSendSms && smsMessage && smsMessage.trim()) {
+      try {
+        const trimmedMessage = smsMessage.trim();
+        const customSenderId = await Setting.get('smsSenderId', process.env.SMS_SENDER_ID || '8809617639998');
+        const sendRes = await sendSms({ to: cleanPhone, message: trimmedMessage });
+        const stats = calculateSmsCredits(trimmedMessage);
+
+        const smsLog = await SmsLog.create({
+          recipients: [{ customer: customer._id, phone: customer.phone, name: customer.name }],
+          template: trimmedMessage,
+          resolvedTexts: [
+            {
+              name: customer.name,
+              phone: customer.phone,
+              text: trimmedMessage,
+              charCount: stats.charCount,
+              credits: stats.credits,
+              isUnicode: stats.isUnicode,
+              status: sendRes.success ? 'sent' : 'failed',
+              error: sendRes.error,
+            },
+          ],
+          totalCredits: stats.credits,
+          senderId: customSenderId || process.env.SMS_SENDER_ID || '8809617639998',
+          totalSent: sendRes.success ? 1 : 0,
+          totalFailed: sendRes.success ? 0 : 1,
+          status: sendRes.success ? 'sent' : 'failed',
+        });
+
+        if (sendRes.success) {
+          customer.totalSmsSent = 1;
+          customer.lastSmsSentAt = new Date();
+          await customer.save();
+        }
+
+        smsResult = {
+          success: sendRes.success,
+          error: sendRes.error,
+          credits: stats.credits,
+          logId: smsLog._id,
+        };
+
+        await createAuditLog({
+          req,
+          action: 'SMS_CUSTOMER_ONBOARD',
+          category: 'SMS',
+          description: sendRes.success
+            ? `Dispatched reminder SMS to new customer: ${customer.name} (${customer.phone})`
+            : `Failed to dispatch reminder SMS to new customer: ${customer.name} (${customer.phone}): ${sendRes.error}`,
+          targetId: smsLog._id,
+          targetType: 'SMS',
+          status: sendRes.success ? 'SUCCESS' : 'FAILED',
+          details: { phone: customer.phone, message: trimmedMessage, error: sendRes.error },
+        });
+      } catch (smsErr) {
+        console.error('[createCustomer SMS dispatch error]:', smsErr.message);
+        smsResult = { success: false, error: smsErr.message };
+      }
+    }
 
     await createAuditLog({
       req,
       action: 'CUSTOMER_CREATE',
       category: 'CUSTOMER',
-      description: `Created customer: ${customer.name} (${customer.phone})`,
+      description: `Created customer: ${customer.name} (${customer.phone}) [Bill: ৳${customer.totalPurchases}, Due: ৳${customer.totalDue}]`,
       targetId: customer._id,
       targetType: 'Customer',
       details: {
         name: customer.name,
         phone: customer.phone,
         area: customer.area,
-        openingBalance: customer.openingBalance,
+        totalPurchases: customer.totalPurchases,
+        totalDue: customer.totalDue,
+        totalPaid: customer.totalPaid,
+        billShortCode: customer.billShortCode,
+        smsSent: smsResult?.success || false,
       },
     });
 
-    res.status(201).json({ success: true, data: customer });
+    res.status(201).json({ success: true, data: customer, smsResult });
   } catch (error) {
     next(error);
   }
@@ -144,7 +261,22 @@ export const createCustomer = async (req, res, next) => {
 // @route   PUT /api/customers/:id
 export const updateCustomer = async (req, res, next) => {
   try {
-    const { name, phone, altPhone, address, area, notes, status } = req.body;
+    const {
+      name,
+      phone,
+      altPhone,
+      address,
+      area,
+      notes,
+      status,
+      totalBill,
+      totalPurchases,
+      currentDue,
+      totalDue,
+      billDetailsText,
+      billImageUrl,
+      billShortCode,
+    } = req.body;
 
     const cleanPhone = phone ? normalizePhone(phone) : undefined;
     if (cleanPhone && (cleanPhone.length !== 11 || !cleanPhone.startsWith('01'))) {
@@ -162,17 +294,55 @@ export const updateCustomer = async (req, res, next) => {
       });
     }
 
+    const updateFields = {
+      name,
+      ...(cleanPhone && { phone: cleanPhone }),
+      ...(cleanAltPhone !== undefined && { altPhone: cleanAltPhone }),
+      address,
+      area,
+      notes,
+      status,
+    };
+
+    if (billDetailsText !== undefined) {
+      updateFields.billDetailsText = billDetailsText;
+    }
+    if (billImageUrl !== undefined) {
+      updateFields.billImageUrl = billImageUrl;
+    }
+    if (billShortCode !== undefined && billShortCode.trim()) {
+      updateFields.billShortCode = billShortCode.trim();
+    }
+
+    const hasBill = totalBill !== undefined || totalPurchases !== undefined;
+    const hasDue = currentDue !== undefined || totalDue !== undefined;
+
+    if (hasBill) {
+      updateFields.totalPurchases = parseFloat(totalBill !== undefined ? totalBill : totalPurchases) || 0;
+    }
+    if (hasDue) {
+      updateFields.totalDue = parseFloat(currentDue !== undefined ? currentDue : totalDue) || 0;
+    }
+    if (hasBill && hasDue) {
+      updateFields.totalPaid = Math.max(0, updateFields.totalPurchases - updateFields.totalDue);
+    } else if (hasBill || hasDue) {
+      const existing = await Customer.findById(req.params.id);
+      if (existing) {
+        const finalBill = hasBill ? updateFields.totalPurchases : (existing.totalPurchases || 0);
+        const finalDue = hasDue ? updateFields.totalDue : (existing.totalDue || 0);
+        updateFields.totalPaid = Math.max(0, finalBill - finalDue);
+      }
+    }
+
+    // Ensure customer has a billShortCode
+    const existingCust = await Customer.findById(req.params.id);
+    if (existingCust && !existingCust.billShortCode && !updateFields.billShortCode) {
+      updateFields.billShortCode = await generateUniqueShortCode();
+    }
+
     const customer = await Customer.findByIdAndUpdate(
       req.params.id,
-      {
-        name,
-        ...(cleanPhone && { phone: cleanPhone }),
-        ...(cleanAltPhone !== undefined && { altPhone: cleanAltPhone }),
-        address,
-        area,
-        notes,
-        status,
-      },
+      updateFields,
       { new: true, runValidators: true }
     );
 
@@ -190,10 +360,93 @@ export const updateCustomer = async (req, res, next) => {
       description: `Updated customer profile: ${customer.name} (${customer.phone})`,
       targetId: customer._id,
       targetType: 'Customer',
-      details: { name, phone, address, area, status },
+      details: {
+        name,
+        phone,
+        address,
+        area,
+        status,
+        totalPurchases: customer.totalPurchases,
+        totalDue: customer.totalDue,
+        billShortCode: customer.billShortCode,
+      },
     });
 
     res.status(200).json({ success: true, data: customer });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Upload bill screenshot / memo image
+// @route   POST /api/customers/upload-image
+export const uploadBillImage = (req, res, next) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please select an image file to upload',
+      });
+    }
+
+    const relativeUrl = `/uploads/bills/${req.file.filename}`;
+
+    res.status(200).json({
+      success: true,
+      data: {
+        url: relativeUrl,
+        filename: req.file.filename,
+        size: req.file.size,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get public customer bill & payment details (No auth required)
+// @route   GET /api/customers/public-bill/:shortCode
+export const getPublicCustomerBill = async (req, res, next) => {
+  try {
+    const { shortCode } = req.params;
+    if (!shortCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Short code is required',
+      });
+    }
+
+    let customer = await Customer.findOne({ billShortCode: shortCode });
+    if (!customer && shortCode.length === 24 && /^[0-9a-fA-F]+$/.test(shortCode)) {
+      customer = await Customer.findById(shortCode);
+    }
+
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Bill information not found. Please verify your link.',
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        id: customer._id,
+        name: customer.name,
+        phone: customer.phone,
+        address: customer.address,
+        area: customer.area,
+        totalPurchases: customer.totalPurchases || 0,
+        totalDue: customer.totalDue || 0,
+        totalPaid: customer.totalPaid || 0,
+        billDetailsText: customer.billDetailsText || '',
+        billImageUrl: customer.billImageUrl || '',
+        notes: customer.notes || '',
+        billShortCode: customer.billShortCode,
+        createdAt: customer.createdAt,
+        updatedAt: customer.updatedAt,
+      },
+    });
   } catch (error) {
     next(error);
   }

@@ -7,6 +7,14 @@ const errorHandler = (err, req, res, next) => {
     console.error('❌ Error:', err);
   }
 
+  // Handle JSON parse error from express.json / body-parser
+  if (err instanceof SyntaxError && (err.status === 400 || err.statusCode === 400) && 'body' in err) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid JSON payload received',
+    });
+  }
+
   // Mongoose bad ObjectId
   if (err.name === 'CastError') {
     error.message = 'Resource not found';

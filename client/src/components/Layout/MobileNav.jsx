@@ -2,13 +2,11 @@ import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
-  ShoppingCart,
   MessageSquare,
 } from 'lucide-react';
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/orders', label: 'Orders', icon: ShoppingCart },
   { path: '/customers', label: 'Customers', icon: Users },
   { path: '/sms', label: 'SMS', icon: MessageSquare },
 ];

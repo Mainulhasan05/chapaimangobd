@@ -12,6 +12,7 @@ import SMSPage from './pages/SMSPage';
 import ImportPage from './pages/ImportPage';
 import SettingsPage from './pages/SettingsPage';
 import AuditLogsPage from './pages/AuditLogsPage';
+import PublicBillPage from './pages/PublicBillPage';
 import './index.css';
 import './layout.css';
 
@@ -72,6 +73,9 @@ function App() {
                 </PublicRoute>
               }
             />
+            {/* Public Customer Bill & Payment Pages */}
+            <Route path="/b/:shortCode" element={<PublicBillPage />} />
+            <Route path="/bill/:shortCode" element={<PublicBillPage />} />
             <Route
               element={
                 <ProtectedRoute>

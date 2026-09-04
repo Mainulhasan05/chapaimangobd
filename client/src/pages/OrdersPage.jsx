@@ -34,6 +34,7 @@ import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import ConfirmModal from '../components/ConfirmModal';
 import PhoneInput, { isBDPhoneValid } from '../components/PhoneInput';
+import WhatsAppOrderModal from '../components/WhatsAppOrderModal';
 
 const formatSummaryDate = (dateStr) => {
   if (!dateStr) return { formatted: '', isToday: false, isYesterday: false };
@@ -87,6 +88,7 @@ const OrdersPage = () => {
   const [showDetailsModal, setShowDetailsModal] = useState(null);
   const [showStickerModal, setShowStickerModal] = useState(null);
   const [showTrackingSmsModal, setShowTrackingSmsModal] = useState(null);
+  const [showWhatsAppModal, setShowWhatsAppModal] = useState(null);
   const [showEditOrderModal, setShowEditOrderModal] = useState(null);
   const [editOrderForm, setEditOrderForm] = useState(null);
   const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'cash', note: '' });
@@ -1001,6 +1003,17 @@ const OrdersPage = () => {
                           <Printer size={15} />
                         </button>
                         <button
+                          type="button"
+                          className="btn btn-ghost btn-icon btn-sm"
+                          title="1-Click WhatsApp Ready Message"
+                          onClick={() => setShowWhatsAppModal(order)}
+                          style={{ color: '#25D366' }}
+                        >
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12.031 2c-5.508 0-9.986 4.477-9.986 9.984 0 1.761.459 3.479 1.332 5.001L2 22l5.163-1.353c1.472.802 3.129 1.226 4.868 1.226 5.508 0 9.986-4.477 9.986-9.984 0-5.507-4.478-9.989-9.986-9.989zm5.82 14.156c-.244.686-1.42 1.309-1.968 1.391-.51.077-1.173.109-3.791-.976-3.344-1.385-5.506-4.786-5.673-5.008-.167-.222-1.358-1.808-1.358-3.448 0-1.641.862-2.45 1.169-2.784.307-.333.67-.417.893-.417.223 0 .446.002.642.012.207.01.485-.078.759.579.284.68 1.002 2.45 1.091 2.632.089.182.148.396.029.633-.119.237-.178.385-.356.593-.178.208-.374.464-.535.624-.179.178-.366.372-.157.73.208.356.927 1.53 1.992 2.478 1.368 1.218 2.523 1.597 2.879 1.775.356.178.564.148.772-.089.208-.237.89-1.038 1.128-1.394.237-.356.475-.297.8-.178.326.119 2.072.977 2.428 1.155.356.178.593.267.68.416.089.148.089.862-.155 1.548z" />
+                          </svg>
+                        </button>
+                        <button
                           className="btn btn-ghost btn-icon btn-sm"
                           title="Send Courier Tracking SMS"
                           onClick={() => handleOpenTrackingSms(order)}
@@ -1166,6 +1179,16 @@ const OrdersPage = () => {
                     onClick={() => setShowStickerModal(order)}
                   >
                     <Printer size={13} /> Sticker
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => setShowWhatsAppModal(order)}
+                    style={{ color: '#25D366' }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12.031 2c-5.508 0-9.986 4.477-9.986 9.984 0 1.761.459 3.479 1.332 5.001L2 22l5.163-1.353c1.472.802 3.129 1.226 4.868 1.226 5.508 0 9.986-4.477 9.986-9.984 0-5.507-4.478-9.989-9.986-9.989zm5.82 14.156c-.244.686-1.42 1.309-1.968 1.391-.51.077-1.173.109-3.791-.976-3.344-1.385-5.506-4.786-5.673-5.008-.167-.222-1.358-1.808-1.358-3.448 0-1.641.862-2.45 1.169-2.784.307-.333.67-.417.893-.417.223 0 .446.002.642.012.207.01.485-.078.759.579.284.68 1.002 2.45 1.091 2.632.089.182.148.396.029.633-.119.237-.178.385-.356.593-.178.208-.374.464-.535.624-.179.178-.366.372-.157.73.208.356.927 1.53 1.992 2.478 1.368 1.218 2.523 1.597 2.879 1.775.356.178.564.148.772-.089.208-.237.89-1.038 1.128-1.394.237-.356.475-.297.8-.178.326.119 2.072.977 2.428 1.155.356.178.593.267.68.416.089.148.089.862-.155 1.548z" />
+                    </svg> WhatsApp
                   </button>
                   <button
                     type="button"
@@ -1748,6 +1771,27 @@ const OrdersPage = () => {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowDetailsModal(null)}>Close</button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  const o = showDetailsModal;
+                  setShowDetailsModal(null);
+                  setShowWhatsAppModal(o);
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  color: '#25D366',
+                  borderColor: 'rgba(37, 211, 102, 0.4)',
+                }}
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M12.031 2c-5.508 0-9.986 4.477-9.986 9.984 0 1.761.459 3.479 1.332 5.001L2 22l5.163-1.353c1.472.802 3.129 1.226 4.868 1.226 5.508 0 9.986-4.477 9.986-9.984 0-5.507-4.478-9.989-9.986-9.989zm5.82 14.156c-.244.686-1.42 1.309-1.968 1.391-.51.077-1.173.109-3.791-.976-3.344-1.385-5.506-4.786-5.673-5.008-.167-.222-1.358-1.808-1.358-3.448 0-1.641.862-2.45 1.169-2.784.307-.333.67-.417.893-.417.223 0 .446.002.642.012.207.01.485-.078.759.579.284.68 1.002 2.45 1.091 2.632.089.182.148.396.029.633-.119.237-.178.385-.356.593-.178.208-.374.464-.535.624-.179.178-.366.372-.157.73.208.356.927 1.53 1.992 2.478 1.368 1.218 2.523 1.597 2.879 1.775.356.178.564.148.772-.089.208-.237.89-1.038 1.128-1.394.237-.356.475-.297.8-.178.326.119 2.072.977 2.428 1.155.356.178.593.267.68.416.089.148.089.862-.155 1.548z" />
+                </svg>
+                WhatsApp
+              </button>
               {showDetailsModal.orderDue > 0 && (
                 <button
                   className="btn btn-primary"
@@ -2290,6 +2334,15 @@ const OrdersPage = () => {
         isLoading={deleteOrderMutation.isPending}
       />
 
+      {/* 1-Click WhatsApp Ready Message Modal */}
+      {showWhatsAppModal && (
+        <WhatsAppOrderModal
+          order={showWhatsAppModal}
+          isOpen={Boolean(showWhatsAppModal)}
+          onClose={() => setShowWhatsAppModal(null)}
+        />
+      )}
+
       {/* Responsive & Print Styles for Orders Page */}
       <style>{`
         .desktop-orders-table {
@@ -2306,6 +2359,7 @@ const OrdersPage = () => {
           background: var(--bg-card);
           z-index: 2;
           box-shadow: -4px 0 8px rgba(0, 0, 0, 0.2);
+          min-width: 280px;
         }
 
         .orders-actions-cell {
@@ -2314,6 +2368,7 @@ const OrdersPage = () => {
           background: var(--bg-card);
           z-index: 2;
           box-shadow: -4px 0 8px rgba(0, 0, 0, 0.2);
+          min-width: 280px;
         }
 
         @media (max-width: 768px) {
@@ -2329,7 +2384,7 @@ const OrdersPage = () => {
 
         .order-card-actions {
           display: grid;
-          grid-template-columns: repeat(4, 1fr);
+          grid-template-columns: repeat(3, 1fr);
           gap: 6px;
           margin-top: 6px;
           padding-top: 8px;
@@ -2338,7 +2393,7 @@ const OrdersPage = () => {
 
         @media (max-width: 520px) {
           .order-card-actions {
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(3, 1fr);
           }
         }
 

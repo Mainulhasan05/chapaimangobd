@@ -1,30 +1,26 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
-  ShoppingCart,
   MessageSquare,
   FileSpreadsheet,
   Settings,
   Shield,
   LogOut,
   X,
-  Menu,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 const navItems = [
   { path: '/', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/customers', label: 'Customers', icon: Users },
-  { path: '/orders', label: 'Orders', icon: ShoppingCart },
   { path: '/sms', label: 'SMS Center', icon: MessageSquare },
   { path: '/import', label: 'Excel Import', icon: FileSpreadsheet },
   { path: '/audit-logs', label: 'Audit Logs', icon: Shield },
 ];
 
 const Sidebar = ({ isOpen, onClose }) => {
-  const { logout, user } = useAuth();
-  const location = useLocation();
+  const { logout } = useAuth();
 
   return (
     <>
