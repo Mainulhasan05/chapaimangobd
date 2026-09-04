@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { customerAPI } from '../api';
+import { customerAPI, getImageUrl } from '../api';
 import {
   Phone,
   MapPin,
@@ -126,12 +126,8 @@ const PublicBillPage = () => {
   const customer = data;
   const isPaid = (customer.totalDue || 0) <= 0;
 
-  // Resolve full image URL
-  const fullImageUrl = customer.billImageUrl
-    ? customer.billImageUrl.startsWith('http')
-      ? customer.billImageUrl
-      : `${API_BASE}${customer.billImageUrl.startsWith('/') ? '' : '/'}${customer.billImageUrl}`
-    : null;
+  // Resolve full image URL pointing directly to backend host
+  const fullImageUrl = getImageUrl(customer.billImageUrl) || null;
 
   return (
     <div

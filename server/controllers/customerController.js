@@ -6,6 +6,9 @@ import Setting from '../models/Setting.js';
 import { sendSms, cleanSmsText } from '../utils/smsService.js';
 import { calculateSmsCredits } from './smsController.js';
 import { createAuditLog } from '../utils/auditLogger.js';
+import path from 'path';
+import fs from 'fs';
+import { deleteBillFile, BILLS_UPLOADS_DIR } from '../utils/fileStorage.js';
 
 /**
  * Normalizes BD phone numbers to 11 digits
@@ -314,6 +317,21 @@ export const updateCustomer = async (req, res, next) => {
       updateFields.billShortCode = billShortCode.trim();
     }
 
+    const existingCust = await Customer.findById(req.params.id);
+    if (!existingCust) {
+      return res.status(404).json({
+        success: false,
+        message: 'Customer not found',
+      });
+    }
+
+    // If billImageUrl is being replaced or removed, delete the old image file from server storage
+    if (billImageUrl !== undefined && existingCust.billImageUrl && existingCust.billImageUrl !== billImageUrl) {
+      deleteBillFile(existingCust.billImageUrl).catch((err) =>
+        console.error('[updateCustomer] Error deleting replaced image from storage:', err.message)
+      );
+    }
+
     const hasBill = totalBill !== undefined || totalPurchases !== undefined;
     const hasDue = currentDue !== undefined || totalDue !== undefined;
 
@@ -326,17 +344,13 @@ export const updateCustomer = async (req, res, next) => {
     if (hasBill && hasDue) {
       updateFields.totalPaid = Math.max(0, updateFields.totalPurchases - updateFields.totalDue);
     } else if (hasBill || hasDue) {
-      const existing = await Customer.findById(req.params.id);
-      if (existing) {
-        const finalBill = hasBill ? updateFields.totalPurchases : (existing.totalPurchases || 0);
-        const finalDue = hasDue ? updateFields.totalDue : (existing.totalDue || 0);
-        updateFields.totalPaid = Math.max(0, finalBill - finalDue);
-      }
+      const finalBill = hasBill ? updateFields.totalPurchases : (existingCust.totalPurchases || 0);
+      const finalDue = hasDue ? updateFields.totalDue : (existingCust.totalDue || 0);
+      updateFields.totalPaid = Math.max(0, finalBill - finalDue);
     }
 
     // Ensure customer has a billShortCode
-    const existingCust = await Customer.findById(req.params.id);
-    if (existingCust && !existingCust.billShortCode && !updateFields.billShortCode) {
+    if (!existingCust.billShortCode && !updateFields.billShortCode) {
       updateFields.billShortCode = await generateUniqueShortCode();
     }
 
@@ -345,13 +359,6 @@ export const updateCustomer = async (req, res, next) => {
       updateFields,
       { new: true, runValidators: true }
     );
-
-    if (!customer) {
-      return res.status(404).json({
-        success: false,
-        message: 'Customer not found',
-      });
-    }
 
     await createAuditLog({
       req,
@@ -389,18 +396,72 @@ export const uploadBillImage = (req, res, next) => {
       });
     }
 
-    const relativeUrl = `/uploads/bills/${req.file.filename}`;
+    const filename = req.file.filename;
+    const relativeUrl = `/uploads/bills/${filename}`;
+
+    // Determine backend base URL to ensure full absolute URL points to backend API domain
+    const envBackend = process.env.BACKEND_URL || (process.env.NODE_ENV === 'production' ? 'https://chapaimango-api.parlorprobd.com' : '');
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    const host = req.get('host') || 'chapaimango-api.parlorprobd.com';
+    const backendBase = envBackend ? envBackend.replace(/\/+$/, '') : `${protocol}://${host}`;
+    const fullUrl = `${backendBase}${relativeUrl}`;
 
     res.status(200).json({
       success: true,
       data: {
-        url: relativeUrl,
-        filename: req.file.filename,
+        url: fullUrl,
+        relativeUrl,
+        filename,
         size: req.file.size,
       },
     });
   } catch (error) {
     next(error);
+  }
+};
+
+// @desc    Delete bill image from storage
+// @route   POST /api/customers/delete-image
+export const deleteBillImage = async (req, res, next) => {
+  try {
+    const { url, filename } = req.body;
+    const target = filename || url;
+    if (!target) {
+      return res.status(400).json({
+        success: false,
+        message: 'Image URL or filename is required',
+      });
+    }
+
+    const deleted = await deleteBillFile(target);
+    res.status(200).json({
+      success: true,
+      message: deleted ? 'Image removed from server storage' : 'File already removed or not found',
+      deleted,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Direct fallback route to serve bill images with CORS headers
+// @route   GET /api/customers/bill-image/:filename
+export const getBillImageDirect = (req, res) => {
+  try {
+    const filename = path.basename((req.params.filename || '').split('?')[0]);
+    if (!filename) return res.status(400).send('Invalid filename');
+
+    const filePath = path.join(BILLS_UPLOADS_DIR, filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).send('Image file not found');
+    }
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    return res.sendFile(filePath);
+  } catch (err) {
+    return res.status(500).send('Failed to fetch image');
   }
 };
 
@@ -630,6 +691,13 @@ export const deleteCustomer = async (req, res, next) => {
     }
     if (paymentCount > 0) {
       await Payment.deleteMany({ customer: customer._id });
+    }
+
+    // Delete attached bill image file from storage if present
+    if (customer.billImageUrl) {
+      deleteBillFile(customer.billImageUrl).catch((err) =>
+        console.error('[deleteCustomer] Error deleting customer bill image from storage:', err.message)
+      );
     }
 
     await Customer.findByIdAndDelete(customer._id);

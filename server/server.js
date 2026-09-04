@@ -114,7 +114,24 @@ const billUploadsDir = path.join(uploadsDir, 'bills');
 if (!fs.existsSync(billUploadsDir)) {
   fs.mkdirSync(billUploadsDir, { recursive: true });
 }
-app.use('/uploads', express.static(uploadsDir));
+
+// Serve /uploads with CORS and Cross-Origin-Resource-Policy headers
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+}, express.static(uploadsDir));
+
+// Fallback if running from a different working directory
+const cwdUploadsDir = path.join(process.cwd(), 'uploads');
+if (cwdUploadsDir !== uploadsDir && fs.existsSync(cwdUploadsDir)) {
+  app.use('/uploads', (req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+    next();
+  }, express.static(cwdUploadsDir));
+}
 
 // Serve frontend client SPA if client/dist exists
 const clientDist = path.join(__dirname, '../client/dist');

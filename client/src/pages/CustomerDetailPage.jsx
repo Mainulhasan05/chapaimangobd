@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { customerAPI, smsAPI } from '../api';
+import { customerAPI, smsAPI, getImageUrl } from '../api';
 import {
   ArrowLeft,
   Phone,
@@ -347,11 +347,11 @@ const CustomerDetailPage = () => {
               <div style={{ fontWeight: 600, fontSize: '0.8125rem', color: 'var(--text-primary)', marginBottom: 6 }}>
                 Bill Slip / Memo Screenshot (Customer Visible)
               </div>
-              <a href={customer.billImageUrl} target="_blank" rel="noopener noreferrer">
+              <a href={getImageUrl(customer.billImageUrl)} target="_blank" rel="noopener noreferrer">
                 <img
-                  src={customer.billImageUrl}
+                  src={getImageUrl(customer.billImageUrl)}
                   alt="Bill Memo"
-                  style={{ maxHeight: 220, maxWidth: '100%', borderRadius: 8, objectFit: 'contain', border: '1px solid var(--border)' }}
+                  style={{ maxHeight: 220, maxWidth: '100%', borderRadius: 8, objectFit: 'contain', border: '1px solid var(--border)', background: '#111' }}
                 />
               </a>
             </div>

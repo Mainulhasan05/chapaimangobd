@@ -1,9 +1,41 @@
 import axios from 'axios';
 
 const rawApiUrl = import.meta.env.VITE_API_URL || 'https://chapaimango-api.parlorprobd.com/api';
-const API_BASE = rawApiUrl.replace(/\/+$/, '').endsWith('/api')
+export const API_BASE = rawApiUrl.replace(/\/+$/, '').endsWith('/api')
   ? rawApiUrl.replace(/\/+$/, '')
   : `${rawApiUrl.replace(/\/+$/, '')}/api`;
+
+export const BACKEND_URL = API_BASE.replace(/\/api$/, '');
+
+/**
+ * Resolves any image URL to the backend API host
+ * Fixes relative paths like /uploads/bills/... and frontend domain mismatches
+ */
+export const getImageUrl = (url) => {
+  if (!url || typeof url !== 'string') return '';
+  const trimmed = url.trim();
+  if (!trimmed) return '';
+
+  if (trimmed.startsWith('blob:') || trimmed.startsWith('data:')) {
+    return trimmed;
+  }
+
+  if (trimmed.startsWith(BACKEND_URL)) {
+    return trimmed;
+  }
+
+  if (trimmed.includes('/uploads/')) {
+    const uploadSubpath = trimmed.substring(trimmed.indexOf('/uploads/'));
+    return `${BACKEND_URL}${uploadSubpath}`;
+  }
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+
+  const cleanPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  return `${BACKEND_URL}${cleanPath}`;
+};
 
 const api = axios.create({
   baseURL: API_BASE,
@@ -57,7 +89,7 @@ export const customerAPI = {
   getAll: (params) => api.get('/customers', { params }),
   getOne: (id) => api.get(`/customers/${id}`),
   create: (data) => api.post('/customers', data),
-  update: (id, data) => api.put(`/customers/${id}`, data),
+  update: (id, data) => api.post(`/customers/${id}`, data), // Uses POST to avoid 403 Forbidden on LiteSpeed/cPanel
   getLedger: (id, params) => api.get(`/customers/${id}/ledger`, { params }),
   recordPayment: (id, data) => api.post(`/customers/${id}/payment`, data),
   delete: (id, params) => {
@@ -74,6 +106,7 @@ export const customerAPI = {
     api.post('/customers/upload-image', formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
     }),
+  deleteBillImage: (data) => api.post('/customers/delete-image', data),
 };
 
 // ============================================
@@ -83,7 +116,7 @@ export const orderAPI = {
   getAll: (params) => api.get('/orders', { params }),
   getOne: (id) => api.get(`/orders/${id}`),
   create: (data) => api.post('/orders', data),
-  update: (id, data) => api.put(`/orders/${id}`, data),
+  update: (id, data) => api.post(`/orders/${id}`, data), // Uses POST to avoid 403 Forbidden on LiteSpeed/cPanel
   delete: (id, params) => {
     const payload = params || {};
     return api.post(`/orders/${id}/delete`, payload, { params }).catch((err) => {
@@ -114,7 +147,7 @@ export const smsAPI = {
   getHistory: (params) => api.get('/sms/history', { params }),
   getStats: () => api.get('/sms/stats'),
   getConfig: () => api.get('/sms/config'),
-  updateConfig: (data) => api.put('/sms/config', data),
+  updateConfig: (data) => api.post('/sms/config', data),
   test: (data) => api.post('/sms/test', data),
   getBalance: () => api.get('/sms/balance'),
 };

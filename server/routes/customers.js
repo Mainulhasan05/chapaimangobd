@@ -1,7 +1,6 @@
 import express from 'express';
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs';
 import {
   getCustomers,
   getCustomer,
@@ -11,23 +10,27 @@ import {
   recordPayment,
   deleteCustomer,
   uploadBillImage,
+  deleteBillImage,
+  getBillImageDirect,
   getPublicCustomerBill,
 } from '../controllers/customerController.js';
 import { protect } from '../middleware/auth.js';
+import { BILLS_UPLOADS_DIR, ensureUploadDirs } from '../utils/fileStorage.js';
 
 const router = express.Router();
 
-// Public route: View bill details by short code (NO authentication required)
+// Ensure upload directories exist at initialization
+ensureUploadDirs();
+
+// Public routes (NO authentication required)
 router.get('/public-bill/:shortCode', getPublicCustomerBill);
+router.get('/bill-image/:filename', getBillImageDirect);
 
 // Configure multer for bill image uploads (JPEG, PNG, WEBP, GIF, max 10MB)
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
-    const uploadPath = path.join(process.cwd(), 'uploads/bills');
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath, { recursive: true });
-    }
-    cb(null, uploadPath);
+    ensureUploadDirs();
+    cb(null, BILLS_UPLOADS_DIR);
   },
   filename: (req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
@@ -52,9 +55,15 @@ const uploadImage = multer({
 router.use(protect);
 
 router.post('/upload-image', uploadImage.single('image'), uploadBillImage);
+router.post('/delete-image', deleteBillImage);
 router.route('/').get(getCustomers).post(createCustomer);
+
+// Update and Delete routes supporting both standard methods and POST for cPanel/LiteSpeed compatibility
 router.route('/:id').get(getCustomer).put(updateCustomer).delete(deleteCustomer);
-router.post('/:id/delete', deleteCustomer); // Alternative POST endpoint for LiteSpeed/cPanel compatibility
+router.post('/:id', updateCustomer); // POST endpoint for update to bypass 403 Forbidden on PUT
+router.post('/:id/update', updateCustomer); // Alternative POST endpoint for update
+router.post('/:id/delete', deleteCustomer); // Alternative POST endpoint for delete
+
 router.get('/:id/ledger', getCustomerLedger);
 router.post('/:id/payment', recordPayment);
 

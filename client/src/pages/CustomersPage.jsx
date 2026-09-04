@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { customerAPI, smsAPI } from '../api';
+import { customerAPI, smsAPI, getImageUrl } from '../api';
 import { useNavigate } from 'react-router-dom';
 import {
   Search,
@@ -398,6 +398,23 @@ const CustomersPage = () => {
     }
   };
 
+  // Handle removal of uploaded image from form and physical server storage
+  const handleRemoveImage = async () => {
+    const currentUrl = form.billImageUrl;
+    if (currentUrl) {
+      try {
+        await customerAPI.deleteBillImage({ url: currentUrl });
+      } catch (err) {
+        console.error('Failed to remove image from server storage:', err);
+      }
+    }
+    setForm((prev) => ({ ...prev, billImageUrl: '' }));
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+    toast.success('Image removed from storage');
+  };
+
   // Handle Send Preview / Test SMS in Add Customer modal
   const handleSendPreviewSms = async () => {
     if (!form.phone || !isBDPhoneValid(form.phone)) {
@@ -678,18 +695,23 @@ const CustomersPage = () => {
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                         {c.billImageUrl && (
-                          <span
+                          <a
+                            href={getImageUrl(c.billImageUrl)}
+                            target="_blank"
+                            rel="noopener noreferrer"
                             style={{
                               fontSize: '0.6875rem',
                               color: '#f39c12',
                               display: 'inline-flex',
                               alignItems: 'center',
-                              gap: 3,
+                              gap: 4,
                               fontWeight: 600,
+                              textDecoration: 'none',
                             }}
+                            title="Open screenshot in new tab"
                           >
-                            <ImageIcon size={11} /> Screenshot
-                          </span>
+                            <ImageIcon size={11} /> Screenshot <ExternalLink size={10} />
+                          </a>
                         )}
 
                         {c.billDetailsText ? (
@@ -977,9 +999,21 @@ const CustomersPage = () => {
                     }}
                   >
                     {c.billImageUrl && (
-                      <span style={{ color: '#f39c12', display: 'inline-flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
-                        <ImageIcon size={12} /> Memo screenshot attached
-                      </span>
+                      <a
+                        href={getImageUrl(c.billImageUrl)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                          color: '#f39c12',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 4,
+                          fontWeight: 600,
+                          textDecoration: 'none',
+                        }}
+                      >
+                        <ImageIcon size={12} /> Memo screenshot attached <ExternalLink size={10} />
+                      </a>
                     )}
                     {c.billDetailsText && (
                       <div>
@@ -1222,35 +1256,92 @@ const CustomersPage = () => {
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'space-between',
-                          padding: '8px 12px',
+                          padding: '10px 14px',
                           background: 'rgba(255, 255, 255, 0.04)',
-                          borderRadius: 'var(--radius-sm)',
+                          borderRadius: 'var(--radius-md)',
                           border: '1px solid var(--border)',
+                          gap: 12,
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <ImageIcon size={20} style={{ color: '#f39c12' }} />
-                          <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                          <a
+                            href={getImageUrl(form.billImageUrl)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{ position: 'relative', display: 'block', flexShrink: 0 }}
+                            title="Click to view full image in new tab"
+                          >
+                            <img
+                              src={getImageUrl(form.billImageUrl)}
+                              alt="Memo preview"
+                              style={{
+                                width: 56,
+                                height: 56,
+                                objectFit: 'cover',
+                                borderRadius: 8,
+                                border: '1px solid var(--border)',
+                                background: '#111',
+                              }}
+                              onError={(e) => {
+                                e.target.style.display = 'none';
+                              }}
+                            />
+                          </a>
+                          <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                              Screenshot attached
+                              Screenshot Attached
                             </div>
-                            <a
-                              href={form.billImageUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              style={{ fontSize: '0.6875rem', color: 'var(--accent-secondary)' }}
-                            >
-                              View uploaded image
-                            </a>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                              <a
+                                href={getImageUrl(form.billImageUrl)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{
+                                  fontSize: '0.75rem',
+                                  color: 'var(--accent-secondary)',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 4,
+                                  textDecoration: 'none',
+                                }}
+                              >
+                                <ExternalLink size={12} /> View uploaded image
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                style={{
+                                  background: 'none',
+                                  border: 'none',
+                                  padding: 0,
+                                  fontSize: '0.75rem',
+                                  color: 'var(--text-secondary)',
+                                  textDecoration: 'underline',
+                                  cursor: 'pointer',
+                                }}
+                              >
+                                Replace
+                              </button>
+                            </div>
                           </div>
                         </div>
                         <button
                           type="button"
-                          className="btn btn-ghost btn-sm text-danger"
-                          onClick={() => setForm({ ...form, billImageUrl: '' })}
-                          style={{ color: 'var(--danger)', height: 26, fontSize: '0.6875rem' }}
+                          className="btn btn-ghost btn-sm"
+                          onClick={handleRemoveImage}
+                          style={{
+                            color: 'var(--danger)',
+                            height: 32,
+                            padding: '0 10px',
+                            fontSize: '0.75rem',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            border: '1px solid rgba(239, 68, 68, 0.2)',
+                          }}
+                          title="Remove image and delete from storage"
                         >
-                          <X size={14} /> Remove
+                          <Trash2 size={13} /> Remove
                         </button>
                       </div>
                     ) : (

@@ -19,6 +19,7 @@ router.get('/stats', getSmsStats);
 router.get('/balance', getSmsBalance);
 router.get('/config', getSmsConfig);
 router.put('/config', updateSmsConfig);
+router.post('/config', updateSmsConfig); // POST endpoint for updating config
 router.post('/test', sendTestSms);
 router.post('/send', sendBulkSms);
 router.get('/history', getSmsHistory);
