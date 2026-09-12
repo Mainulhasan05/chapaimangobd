@@ -4,6 +4,7 @@ import SmsLog from '../models/SmsLog.js';
 import Setting from '../models/Setting.js';
 import { sendSms, sendBulkDynamicSms, cleanSmsText } from '../utils/smsService.js';
 import { createAuditLog } from '../utils/auditLogger.js';
+import { isSmsCapable } from '../utils/phone.js';
 
 // Template variable resolver
 const resolveTemplate = (template, data) => {
@@ -93,9 +94,17 @@ export const sendBulkSms = async (req, res, next) => {
 
     const recipients = [];
     const smsItems = [];
+    // The Automas gateway is Bangladesh only; foreign customers are reported
+    // back so the admin can reach them over WhatsApp.
+    const skippedInternational = [];
     let calculatedTotalCredits = 0;
 
     for (const customer of customers) {
+      if (!isSmsCapable(customer.phone)) {
+        skippedInternational.push({ name: customer.name, phone: customer.phone });
+        continue;
+      }
+
       // Use the exact same helper to guarantee preview matches delivery 100%
       const resolvedText = buildFinalSmsText({
         template,
@@ -121,6 +130,16 @@ export const sendBulkSms = async (req, res, next) => {
         charCount: stats.charCount,
         credits: stats.credits,
         isUnicode: stats.isUnicode,
+      });
+    }
+
+    if (smsItems.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: skippedInternational.length
+          ? `All ${skippedInternational.length} selected customers have international numbers. The SMS gateway is Bangladesh only, so reach them over WhatsApp instead.`
+          : 'None of the selected customers have a valid phone number',
+        data: { skippedInternational },
       });
     }
 
@@ -168,8 +187,10 @@ export const sendBulkSms = async (req, res, next) => {
     // Update totalSmsSent and lastSmsSentAt on successfully contacted customers
     const successfullyContactedCustomerIds = [];
     sendResults.forEach((r, idx) => {
-      if (r.status === 'sent' && customers[idx]?._id) {
-        successfullyContactedCustomerIds.push(customers[idx]._id);
+      // sendResults is aligned with smsItems, not with `customers`, because
+      // customers unreachable by the domestic gateway are filtered out above.
+      if (r.status === 'sent' && smsItems[idx]?.customer) {
+        successfullyContactedCustomerIds.push(smsItems[idx].customer);
       }
     });
 
@@ -187,14 +208,15 @@ export const sendBulkSms = async (req, res, next) => {
       req,
       action: 'SMS_BROADCAST',
       category: 'SMS',
-      description: `Dispatched SMS broadcast to ${customers.length} recipients (${totalSent} delivered, ${totalFailed} failed)`,
+      description: `Dispatched SMS broadcast to ${smsItems.length} recipients (${totalSent} delivered, ${totalFailed} failed)`,
       targetId: smsLog._id,
       targetType: 'SMS',
-      status: totalFailed === customers.length ? 'FAILED' : totalFailed > 0 ? 'WARNING' : 'SUCCESS',
+      status: totalFailed === smsItems.length ? 'FAILED' : totalFailed > 0 ? 'WARNING' : 'SUCCESS',
       details: {
-        totalRecipients: customers.length,
+        totalRecipients: smsItems.length,
         totalSent,
         totalFailed,
+        totalSkippedInternational: skippedInternational.length,
         template,
       },
     });
@@ -204,10 +226,12 @@ export const sendBulkSms = async (req, res, next) => {
       data: {
         smsLog,
         summary: {
-          total: customers.length,
+          total: smsItems.length,
           sent: totalSent,
           failed: totalFailed,
+          skippedInternational: skippedInternational.length,
         },
+        skippedInternational,
       },
     });
   } catch (error) {
@@ -225,6 +249,13 @@ export const sendTestSms = async (req, res, next) => {
       return res.status(400).json({
         success: false,
         message: 'Phone number and message are required',
+      });
+    }
+
+    if (!isSmsCapable(phone)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Test SMS can only be sent to Bangladeshi numbers (11 digits starting with 01).',
       });
     }
 
@@ -533,14 +564,19 @@ export const previewSms = async (req, res, next) => {
         charCount: text.length,
         isUnicode,
         credits,
+        // International numbers are dropped at dispatch, so the preview flags
+        // them and leaves their credits out of the estimate.
+        smsCapable: isSmsCapable(customer.phone),
       };
     });
 
-    const totalCredits = previews.reduce((sum, p) => sum + p.credits, 0);
+    const totalCredits = previews.reduce((sum, p) => sum + (p.smsCapable ? p.credits : 0), 0);
+    const skippedInternational = previews.filter((p) => !p.smsCapable).length;
 
     res.status(200).json({
       success: true,
       data: previews,
+      skippedInternational,
       totalRecipients: customerIds.length,
       previewCount: previews.length,
       totalCredits,

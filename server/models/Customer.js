@@ -84,9 +84,17 @@ const customerSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Legacy single-image field. Kept in sync with billImages[0] so older
+    // rows, list thumbnails and any cached client keep working.
     billImageUrl: {
       type: String,
       trim: true,
+    },
+    // All bill slip / memo screenshots shown on the public bill page, in the
+    // order they should be displayed. The first entry is the cover image.
+    billImages: {
+      type: [String],
+      default: [],
     },
     status: {
       type: String,
@@ -106,6 +114,26 @@ customerSchema.pre('save', function (next) {
   }
   next();
 });
+
+// Keep the legacy single-image field pointing at the cover image, and absorb a
+// legacy-only value into the gallery so both representations always agree.
+customerSchema.pre('save', function (next) {
+  if (Array.isArray(this.billImages) && this.billImages.length > 0) {
+    this.billImageUrl = this.billImages[0];
+  } else if (this.billImageUrl) {
+    this.billImages = [this.billImageUrl];
+  }
+  next();
+});
+
+/**
+ * Every bill image for this customer, tolerating rows written before the
+ * gallery existed.
+ */
+customerSchema.methods.getBillImages = function () {
+  if (Array.isArray(this.billImages) && this.billImages.length > 0) return this.billImages;
+  return this.billImageUrl ? [this.billImageUrl] : [];
+};
 
 // Compound index for common queries
 customerSchema.index({ status: 1, totalDue: -1 });

@@ -26,7 +26,8 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import PhoneInput, { isBDPhoneValid } from '../components/PhoneInput';
+import PhoneInput from '../components/PhoneInput';
+import { isSmsCapable } from '../utils/phone';
 
 const templateVariables = [
   { key: '{name}', label: 'Customer Name' },
@@ -40,10 +41,10 @@ const templateVariables = [
 const sampleTemplates = [
   {
     title: 'Gentle Due Reminder (Standard)',
-    text: `Just a gentle reminder from chapaimango.bd
-Outstanding Due: BDT {totalDue}
+    text: `Gentle reminder from chapaimango.bd
+Total Due: BDT {totalDue}
 
-Please clear the payment by 15 September 2026.
+Please clear the payment as soon as possible.
 For bill & payment details, visit: {billUrl}
 For live support, WhatsApp us at 01717333880
 
@@ -52,8 +53,7 @@ For live support, WhatsApp us at 01717333880
   {
     title: 'Due Reminder (1-SMS Cost Saver)',
     text: `chapaimango.bd Due Reminder
-Due: BDT {totalDue}
-Pay by: 15 Sep 2026
+Total Due: BDT {totalDue}
 Bill: {billUrl}
 WhatsApp: 01717333880`,
   },
@@ -271,7 +271,7 @@ const SMSPage = () => {
 
   const handleTestSubmit = (e) => {
     e.preventDefault();
-    if (!isBDPhoneValid(testPhone)) {
+    if (!isSmsCapable(testPhone)) {
       toast.error('Recipient phone number must be a valid 11-digit Bangladeshi number (e.g. 017XXXXXXXX)');
       return;
     }
@@ -1286,6 +1286,8 @@ const SMSPage = () => {
                   value={testPhone}
                   onChange={setTestPhone}
                   required
+                  international={false}
+                  helperText="The SMS gateway delivers to Bangladeshi operators only."
                 />
                 <div className="form-group">
                   <label className="form-label">Message Content</label>

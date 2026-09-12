@@ -3,6 +3,7 @@ import Customer from '../models/Customer.js';
 import Order from '../models/Order.js';
 import Payment from '../models/Payment.js';
 import { createAuditLog } from '../utils/auditLogger.js';
+import { parsePhone } from '../utils/phone.js';
 
 /**
  * Normalize a header string for flexible matching.
@@ -125,36 +126,26 @@ const HEADER_MAP = {
 };
 
 /**
- * Clean & normalize a Bangladesh phone number string.
- * Restores leading 0 if dropped by Excel (e.g. 1880065390 -> 01880065390)
- * Handles country code +880 or 880.
+ * Clean & normalize a phone number string from a spreadsheet cell.
+ *
+ * Bangladeshi numbers come back in the local "01XXXXXXXXX" form, including
+ * when Excel has eaten the leading zero (1712345678 -> 01712345678) or when
+ * the cell carries the +880 country code. A cell written with any other
+ * country code (+1..., 0044..., etc.) is kept as an E.164 number so overseas
+ * customers survive the import and stay reachable on WhatsApp.
+ *
+ * Anything that is at least 10 digits but unrecognisable is passed through
+ * untouched rather than dropped, matching the previous lenient behaviour.
  */
 const cleanPhoneNumber = (raw) => {
   if (!raw) return null;
-  let cleaned = raw.toString().replace(/[^0-9]/g, '');
 
-  if (cleaned.startsWith('880')) {
-    cleaned = cleaned.substring(2);
-  } else if (cleaned.startsWith('88') && cleaned.length > 11) {
-    cleaned = cleaned.substring(2);
-  }
+  const text = raw.toString().trim();
+  const parsed = parsePhone(text);
+  if (parsed.valid) return parsed.storage;
 
-  // Excel frequently treats phone as integer and removes leading 0
-  if (cleaned.length === 10 && cleaned.startsWith('1')) {
-    cleaned = '0' + cleaned;
-  }
-
-  // Valid BD mobile numbers are 11 digits starting with 01
-  if (cleaned.length === 11 && cleaned.startsWith('01')) {
-    return cleaned;
-  }
-
-  // If at least 10 digits
-  if (cleaned.length >= 10) {
-    return cleaned;
-  }
-
-  return null;
+  const cleaned = text.replace(/[^0-9]/g, '');
+  return cleaned.length >= 10 ? cleaned : null;
 };
 
 /**

@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { customerAPI, smsAPI, getImageUrl, getWhatsAppLink } from '../api';
+import { getBillImages } from '../utils/billImages';
 import {
   ArrowLeft,
   Phone,
@@ -46,10 +47,10 @@ const cleanSmsText = (text) => {
 };
 
 // Standard Due Reminder SMS Template (Well-spaced, no redundant blank lines, no double spaces)
-const DEFAULT_REMINDER_TEMPLATE = `Just a gentle reminder from chapaimango.bd
-Outstanding Due: BDT {due}
+const DEFAULT_REMINDER_TEMPLATE = `Gentle reminder from chapaimango.bd
+Total Due: BDT {due}
 
-Please clear the payment by {deadline}.
+Please clear the payment as soon as possible.
 For bill & payment details, visit: {billUrl}
 For live support, WhatsApp us at {whatsappNumber}
 
@@ -57,8 +58,7 @@ For live support, WhatsApp us at {whatsappNumber}
 
 // Ultra-Compact 1-SMS Cost Saver Template (Fits in 1 SMS < 160 characters)
 const COMPACT_REMINDER_TEMPLATE = `chapaimango.bd Due Reminder
-Due: BDT {due}
-Pay by: {deadline}
+Total Due: BDT {due}
 Bill: {billUrl}
 WhatsApp: {whatsappNumber}`;
 
@@ -87,7 +87,6 @@ const CustomerDetailPage = () => {
   const [smsTemplateType, setSmsTemplateType] = useState('standard');
   const [smsForm, setSmsForm] = useState({
     due: '',
-    deadline: '15 September 2026',
     billUrl: 'xxxxxxxxxx',
     whatsappNumber: '01717333880',
     directEdit: false,
@@ -106,6 +105,9 @@ const CustomerDetailPage = () => {
     queryFn: () => customerAPI.getLedger(id).then((r) => r.data.data),
   });
 
+  // Tolerates rows saved before the gallery existed (single billImageUrl only)
+  const billImages = getBillImages(customer);
+
   const deleteMutation = useMutation({
     mutationFn: () => customerAPI.delete(id, { cascade: true }),
     onSuccess: () => {
@@ -123,10 +125,9 @@ const CustomerDetailPage = () => {
     const dueVal = smsForm.due || (customer?.totalDue ? Number(customer.totalDue).toLocaleString('en-BD') : '0');
     const activeTemplate = smsTemplateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
     const resolved = activeTemplate
-      .replace('{due}', dueVal)
-      .replace('{deadline}', smsForm.deadline || '15 September 2026')
-      .replace('{billUrl}', smsForm.billUrl || 'xxxxxxxxxx')
-      .replace('{whatsappNumber}', smsForm.whatsappNumber || '01717333880');
+      .replace(/\{(?:due|totalDue)\}/g, dueVal)
+      .replace(/\{billUrl\}/g, smsForm.billUrl || 'xxxxxxxxxx')
+      .replace(/\{whatsappNumber\}/g, smsForm.whatsappNumber || '01717333880');
     return cleanSmsText(resolved);
   }, [smsForm, customer, smsTemplateType]);
 
@@ -137,7 +138,6 @@ const CustomerDetailPage = () => {
     const billUrl = `${window.location.origin}/b/${code}`;
     setSmsForm({
       due: customer?.totalDue ? Number(customer.totalDue).toLocaleString('en-BD') : '0',
-      deadline: '15 September 2026',
       billUrl,
       whatsappNumber: '01717333880',
       directEdit: false,
@@ -359,22 +359,52 @@ const CustomerDetailPage = () => {
         </div>
       )}
 
-      {/* Bill Memo Screenshot Box (if present) */}
-      {customer.billImageUrl && (
+      {/* Bill Memo Screenshots (if any) */}
+      {billImages.length > 0 && (
         <div className="card" style={{ marginBottom: 'var(--space-lg)', borderLeft: '3px solid #f39c12' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-sm)' }}>
             <ImageIcon size={18} style={{ color: '#f39c12', marginTop: 2 }} />
-            <div>
+            <div style={{ minWidth: 0, flex: 1 }}>
               <div style={{ fontWeight: 600, fontSize: '0.8125rem', color: 'var(--text-primary)', marginBottom: 6 }}>
-                Bill Slip / Memo Screenshot (Customer Visible)
+                Bill Slip / Memo Screenshots (Customer Visible)
+                {billImages.length > 1 && (
+                  <span style={{ marginLeft: 6, fontWeight: 700, color: '#f39c12' }}>
+                    {billImages.length} images
+                  </span>
+                )}
               </div>
-              <a href={getImageUrl(customer.billImageUrl)} target="_blank" rel="noopener noreferrer">
-                <img
-                  src={getImageUrl(customer.billImageUrl)}
-                  alt="Bill Memo"
-                  style={{ maxHeight: 220, maxWidth: '100%', borderRadius: 8, objectFit: 'contain', border: '1px solid var(--border)', background: '#111' }}
-                />
-              </a>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))',
+                  gap: 8,
+                }}
+              >
+                {billImages.map((url, idx) => (
+                  <a
+                    key={url}
+                    href={getImageUrl(url)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={`Open image ${idx + 1} in a new tab`}
+                    style={{ display: 'block' }}
+                  >
+                    <img
+                      src={getImageUrl(url)}
+                      alt={`Bill Memo ${idx + 1}`}
+                      style={{
+                        width: '100%',
+                        height: 140,
+                        borderRadius: 8,
+                        objectFit: 'cover',
+                        border: '1px solid var(--border)',
+                        background: '#111',
+                        display: 'block',
+                      }}
+                    />
+                  </a>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -563,17 +593,6 @@ const CustomerDetailPage = () => {
                   />
                 </div>
 
-                <div>
-                  <label style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>
-                    Payment Deadline
-                  </label>
-                  <input
-                    className="form-input"
-                    style={{ height: 32, fontSize: '0.75rem' }}
-                    value={smsForm.deadline}
-                    onChange={(e) => setSmsForm({ ...smsForm, deadline: e.target.value })}
-                  />
-                </div>
 
                 <div>
                   <label style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>

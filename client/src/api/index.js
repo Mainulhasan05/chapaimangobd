@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { parsePhone } from '../utils/phone';
 
 const rawApiUrl = import.meta.env.VITE_API_URL || 'https://chapaimango-api.parlorprobd.com/api';
 export const API_BASE = rawApiUrl.replace(/\/+$/, '').endsWith('/api')
@@ -38,26 +39,16 @@ export const getImageUrl = (url) => {
 };
 
 /**
- * Generates a direct WhatsApp link with pre-filled message text
- * Supports BD numbers (e.g. 017XXXXXXXX -> 88017XXXXXXXX)
+ * Generates a direct WhatsApp link with pre-filled message text.
+ * Works for Bangladeshi numbers (017XXXXXXXX) and for any international
+ * number stored in E.164 form (+14155552671).
  */
 export const getWhatsAppLink = (phone, message) => {
   if (!phone) return '#';
-  let cleanDigits = phone.toString().replace(/\D/g, '');
-  if (!cleanDigits) return '#';
-  if (cleanDigits.startsWith('880')) {
-    // already starts with 880
-  } else if (cleanDigits.startsWith('0')) {
-    cleanDigits = `88${cleanDigits}`;
-  } else if (cleanDigits.length === 10 && cleanDigits.startsWith('1')) {
-    cleanDigits = `880${cleanDigits}`;
-  } else if (cleanDigits.length === 11 && cleanDigits.startsWith('01')) {
-    cleanDigits = `88${cleanDigits}`;
-  } else {
-    cleanDigits = `880${cleanDigits}`;
-  }
+  const { digits } = parsePhone(phone);
+  if (!digits) return '#';
   const encodedText = message ? encodeURIComponent(message) : '';
-  return `https://wa.me/${cleanDigits}${encodedText ? `?text=${encodedText}` : ''}`;
+  return `https://wa.me/${digits}${encodedText ? `?text=${encodedText}` : ''}`;
 };
 
 const api = axios.create({

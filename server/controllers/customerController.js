@@ -9,20 +9,53 @@ import { createAuditLog } from '../utils/auditLogger.js';
 import path from 'path';
 import fs from 'fs';
 import { deleteBillFile, BILLS_UPLOADS_DIR } from '../utils/fileStorage.js';
+import { normalizePhone, isValidPhone, isSmsCapable } from '../utils/phone.js';
+
+// Re-exported so existing importers keep working. Bangladeshi numbers come
+// back as "01XXXXXXXXX"; foreign numbers as E.164 ("+14155552671").
+export { normalizePhone };
+
+/** Upper bound on bill slip images stored against one customer. */
+export const MAX_BILL_IMAGES = 10;
 
 /**
- * Normalizes BD phone numbers to 11 digits
+ * The gallery for a customer, tolerating rows written before billImages
+ * existed (those only carry the legacy billImageUrl).
  */
-export const normalizePhone = (phone) => {
-  if (!phone) return '';
-  let digits = phone.toString().replace(/\D/g, '');
-  if ((digits.startsWith('8801') || digits.startsWith('880')) && digits.length >= 13) {
-    digits = digits.slice(2);
-  } else if (digits.startsWith('88') && digits.length === 13) {
-    digits = digits.slice(2);
-  }
-  return digits.slice(0, 11);
+const resolveBillImages = (doc) => {
+  if (!doc) return [];
+  if (Array.isArray(doc.billImages) && doc.billImages.length > 0) return doc.billImages;
+  return doc.billImageUrl ? [doc.billImageUrl] : [];
 };
+
+/**
+ * Accepts whatever the client sent for the gallery (an array, a JSON string
+ * from a multipart form, or a single URL) and returns a clean, de-duplicated,
+ * capped list.
+ */
+const sanitizeBillImages = (input) => {
+  let list = input;
+  if (typeof list === 'string') {
+    const trimmed = list.trim();
+    if (trimmed.startsWith('[')) {
+      try {
+        list = JSON.parse(trimmed);
+      } catch {
+        list = [trimmed];
+      }
+    } else {
+      list = trimmed ? [trimmed] : [];
+    }
+  }
+  if (!Array.isArray(list)) return [];
+  return [...new Set(list.map((u) => (u || '').toString().trim()).filter(Boolean))].slice(
+    0,
+    MAX_BILL_IMAGES
+  );
+};
+
+const INVALID_PHONE_MESSAGE =
+  'Enter a valid Bangladeshi number (11 digits starting with 01) or a full international number including its country code (e.g. +14155552671).';
 
 // @desc    Get all customers
 // @route   GET /api/customers
@@ -126,24 +159,25 @@ export const createCustomer = async (req, res, next) => {
       totalDue,
       billDetailsText,
       billImageUrl,
+      billImages,
       billShortCode,
       sendSms: shouldSendSms,
       smsMessage,
     } = req.body;
 
     const cleanPhone = normalizePhone(phone);
-    if (!cleanPhone || cleanPhone.length !== 11 || !cleanPhone.startsWith('01')) {
+    if (!isValidPhone(cleanPhone)) {
       return res.status(400).json({
         success: false,
-        message: 'Phone number must be exactly 11 digits starting with 01 (e.g. 017XXXXXXXX)',
+        message: INVALID_PHONE_MESSAGE,
       });
     }
 
     const cleanAltPhone = altPhone ? normalizePhone(altPhone) : undefined;
-    if (cleanAltPhone && (cleanAltPhone.length !== 11 || !cleanAltPhone.startsWith('01'))) {
+    if (cleanAltPhone && !isValidPhone(cleanAltPhone)) {
       return res.status(400).json({
         success: false,
-        message: 'Alternative phone number must be exactly 11 digits (e.g. 017XXXXXXXX)',
+        message: `Alternative phone number is not valid. ${INVALID_PHONE_MESSAGE}`,
       });
     }
 
@@ -171,11 +205,22 @@ export const createCustomer = async (req, res, next) => {
       notes,
       billShortCode: finalShortCode,
       billDetailsText: billDetailsText || '',
-      billImageUrl: billImageUrl || '',
+      // billImageUrl is kept in sync with the cover image by the model hook
+      billImages: sanitizeBillImages(
+        billImages !== undefined ? billImages : billImageUrl
+      ),
     });
 
     let smsResult = null;
-    if (shouldSendSms && smsMessage && smsMessage.trim()) {
+    if (shouldSendSms && smsMessage && smsMessage.trim() && !isSmsCapable(cleanPhone)) {
+      // Automas only delivers to Bangladeshi operators; the admin can still
+      // reach this customer through the WhatsApp button on the customer row.
+      smsResult = {
+        success: false,
+        skipped: true,
+        error: 'SMS skipped: the domestic gateway cannot deliver to international numbers. Use WhatsApp instead.',
+      };
+    } else if (shouldSendSms && smsMessage && smsMessage.trim()) {
       try {
         const trimmedMessage = cleanSmsText(smsMessage);
         const customSenderId = await Setting.get('smsSenderId', process.env.SMS_SENDER_ID || '8809617639998');
@@ -278,22 +323,23 @@ export const updateCustomer = async (req, res, next) => {
       totalDue,
       billDetailsText,
       billImageUrl,
+      billImages,
       billShortCode,
     } = req.body;
 
     const cleanPhone = phone ? normalizePhone(phone) : undefined;
-    if (cleanPhone && (cleanPhone.length !== 11 || !cleanPhone.startsWith('01'))) {
+    if (cleanPhone && !isValidPhone(cleanPhone)) {
       return res.status(400).json({
         success: false,
-        message: 'Phone number must be exactly 11 digits starting with 01 (e.g. 017XXXXXXXX)',
+        message: INVALID_PHONE_MESSAGE,
       });
     }
 
     const cleanAltPhone = altPhone ? normalizePhone(altPhone) : undefined;
-    if (cleanAltPhone && (cleanAltPhone.length !== 11 || !cleanAltPhone.startsWith('01'))) {
+    if (cleanAltPhone && !isValidPhone(cleanAltPhone)) {
       return res.status(400).json({
         success: false,
-        message: 'Alternative phone number must be exactly 11 digits (e.g. 017XXXXXXXX)',
+        message: `Alternative phone number is not valid. ${INVALID_PHONE_MESSAGE}`,
       });
     }
 
@@ -310,9 +356,6 @@ export const updateCustomer = async (req, res, next) => {
     if (billDetailsText !== undefined) {
       updateFields.billDetailsText = billDetailsText;
     }
-    if (billImageUrl !== undefined) {
-      updateFields.billImageUrl = billImageUrl;
-    }
     if (billShortCode !== undefined && billShortCode.trim()) {
       updateFields.billShortCode = billShortCode.trim();
     }
@@ -325,10 +368,21 @@ export const updateCustomer = async (req, res, next) => {
       });
     }
 
-    // If billImageUrl is being replaced or removed, delete the old image file from server storage
-    if (billImageUrl !== undefined && existingCust.billImageUrl && existingCust.billImageUrl !== billImageUrl) {
-      deleteBillFile(existingCust.billImageUrl).catch((err) =>
-        console.error('[updateCustomer] Error deleting replaced image from storage:', err.message)
+    // Gallery update. `billImages` is authoritative when the client sends it;
+    // `billImageUrl` alone is still honoured for older clients. findByIdAndUpdate
+    // skips the model's save hook, so both fields are written explicitly here.
+    const galleryInput = billImages !== undefined ? billImages : billImageUrl;
+    if (galleryInput !== undefined) {
+      const nextImages = sanitizeBillImages(galleryInput);
+      updateFields.billImages = nextImages;
+      updateFields.billImageUrl = nextImages[0] || '';
+
+      // Physically remove the files that are no longer referenced
+      const removed = resolveBillImages(existingCust).filter((url) => !nextImages.includes(url));
+      removed.forEach((url) =>
+        deleteBillFile(url).catch((err) =>
+          console.error('[updateCustomer] Error deleting removed bill image:', err.message)
+        )
       );
     }
 
@@ -389,30 +443,41 @@ export const updateCustomer = async (req, res, next) => {
 // @route   POST /api/customers/upload-image
 export const uploadBillImage = (req, res, next) => {
   try {
-    if (!req.file) {
+    // multer .fields() collects into req.files; the legacy "image" field and
+    // the multi-file "images" field are both accepted.
+    const files = [...(req.files?.images || []), ...(req.files?.image || []), ...(req.file ? [req.file] : [])];
+
+    if (files.length === 0) {
       return res.status(400).json({
         success: false,
         message: 'Please select an image file to upload',
       });
     }
 
-    const filename = req.file.filename;
-    const relativeUrl = `/uploads/bills/${filename}`;
-
     // Determine backend base URL to ensure full absolute URL points to backend API domain
     const envBackend = process.env.BACKEND_URL || (process.env.NODE_ENV === 'production' ? 'https://chapaimango-api.parlorprobd.com' : '');
     const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'https';
     const host = req.get('host') || 'chapaimango-api.parlorprobd.com';
     const backendBase = envBackend ? envBackend.replace(/\/+$/, '') : `${protocol}://${host}`;
-    const fullUrl = `${backendBase}${relativeUrl}`;
+
+    const uploaded = files.map((file) => {
+      const relativeUrl = `/uploads/bills/${file.filename}`;
+      return {
+        url: `${backendBase}${relativeUrl}`,
+        relativeUrl,
+        filename: file.filename,
+        size: file.size,
+      };
+    });
 
     res.status(200).json({
       success: true,
       data: {
-        url: fullUrl,
-        relativeUrl,
-        filename,
-        size: req.file.size,
+        // Array form for the gallery, plus the original single-file shape so a
+        // stale cached client keeps working.
+        files: uploaded,
+        urls: uploaded.map((f) => f.url),
+        ...uploaded[0],
       },
     });
   } catch (error) {
@@ -502,6 +567,7 @@ export const getPublicCustomerBill = async (req, res, next) => {
         totalPaid: customer.totalPaid || 0,
         billDetailsText: customer.billDetailsText || '',
         billImageUrl: customer.billImageUrl || '',
+        billImages: resolveBillImages(customer),
         notes: customer.notes || '',
         billShortCode: customer.billShortCode,
         createdAt: customer.createdAt,
@@ -694,11 +760,11 @@ export const deleteCustomer = async (req, res, next) => {
     }
 
     // Delete attached bill image file from storage if present
-    if (customer.billImageUrl) {
-      deleteBillFile(customer.billImageUrl).catch((err) =>
+    resolveBillImages(customer).forEach((url) => {
+      deleteBillFile(url).catch((err) =>
         console.error('[deleteCustomer] Error deleting customer bill image from storage:', err.message)
       );
-    }
+    });
 
     await Customer.findByIdAndDelete(customer._id);
 
@@ -737,7 +803,6 @@ export const sendBulkDueReminders = async (req, res, next) => {
       customerIds = [],
       templateType = 'compact', // 'compact' | 'standard'
       customTemplate,
-      deadline = '15 September 2026',
       whatsappNumber = '01717333880',
     } = req.body;
 
@@ -774,26 +839,32 @@ export const sendBulkDueReminders = async (req, res, next) => {
       customTemplate && customTemplate.trim()
         ? customTemplate
         : templateType === 'standard'
-        ? `Just a gentle reminder from chapaimango.bd
-Outstanding Due: BDT {due}
+        ? `Gentle reminder from chapaimango.bd
+Total Due: BDT {due}
 
-Please clear the payment by {deadline}.
+Please clear the payment as soon as possible.
 For bill & payment details, visit: {billUrl}
 For live support, WhatsApp us at {whatsappNumber}
 
 -Chapai Mango Team`
         : `chapaimango.bd Due Reminder
-Due: BDT {due}
-Pay by: {deadline}
+Total Due: BDT {due}
 Bill: {billUrl}
 WhatsApp: {whatsappNumber}`;
 
     const recipients = [];
     const smsItems = [];
+    // Customers reachable only over WhatsApp, reported back so the admin knows
+    // who still needs a nudge.
+    const skippedInternational = [];
     let calculatedTotalCredits = 0;
 
     for (const customer of customers) {
       if (!customer.phone) continue;
+      if (!isSmsCapable(customer.phone)) {
+        skippedInternational.push({ name: customer.name, phone: customer.phone });
+        continue;
+      }
 
       let code = customer.billShortCode;
       if (!code) {
@@ -807,8 +878,7 @@ WhatsApp: {whatsappNumber}`;
 
       const resolvedText = cleanSmsText(
         baseTemplate
-          .replace(/\{due\}/g, dueFormatted)
-          .replace(/\{deadline\}/g, deadline)
+          .replace(/\{(?:due|totalDue)\}/g, dueFormatted)
           .replace(/\{billUrl\}/g, billUrl)
           .replace(/\{whatsappNumber\}/g, whatsappNumber)
           .replace(/\{name\}/g, customer.name || '')
@@ -837,7 +907,10 @@ WhatsApp: {whatsappNumber}`;
     if (smsItems.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'None of the selected customers have a valid phone number',
+        message: skippedInternational.length
+          ? `All ${skippedInternational.length} selected customers have international numbers. The SMS gateway is Bangladesh only, so send these reminders over WhatsApp instead.`
+          : 'None of the selected customers have a valid phone number',
+        data: { skippedInternational },
       });
     }
 
@@ -907,6 +980,7 @@ WhatsApp: {whatsappNumber}`;
         totalSent,
         totalFailed,
         totalCredits: calculatedTotalCredits,
+        totalSkippedInternational: skippedInternational.length,
         target,
       },
     });
@@ -915,12 +989,19 @@ WhatsApp: {whatsappNumber}`;
       success: true,
       message: `Due reminder SMS dispatched to ${totalSent} customers${
         totalFailed > 0 ? ` (${totalFailed} failed)` : ''
+      }${
+        skippedInternational.length
+          ? ` — ${skippedInternational.length} international ${
+              skippedInternational.length === 1 ? 'number was' : 'numbers were'
+            } skipped, send those over WhatsApp`
+          : ''
       }`,
       data: {
         totalRecipients: recipients.length,
         totalSent,
         totalFailed,
         totalCredits: calculatedTotalCredits,
+        skippedInternational,
         logId: smsLog._id,
       },
     });

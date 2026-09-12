@@ -14,6 +14,7 @@ import {
   getBillImageDirect,
   getPublicCustomerBill,
   sendBulkDueReminders,
+  MAX_BILL_IMAGES,
 } from '../controllers/customerController.js';
 import { protect } from '../middleware/auth.js';
 import { BILLS_UPLOADS_DIR, ensureUploadDirs } from '../utils/fileStorage.js';
@@ -55,7 +56,16 @@ const uploadImage = multer({
 // All routes below require authentication
 router.use(protect);
 
-router.post('/upload-image', uploadImage.single('image'), uploadBillImage);
+// Accepts both the legacy single "image" field and the multi-file "images"
+// field so an older cached client keeps uploading successfully.
+router.post(
+  '/upload-image',
+  uploadImage.fields([
+    { name: 'image', maxCount: MAX_BILL_IMAGES },
+    { name: 'images', maxCount: MAX_BILL_IMAGES },
+  ]),
+  uploadBillImage
+);
 router.post('/delete-image', deleteBillImage);
 router.post('/send-bulk-reminders', sendBulkDueReminders);
 router.route('/').get(getCustomers).post(createCustomer);

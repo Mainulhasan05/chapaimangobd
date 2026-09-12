@@ -31,7 +31,9 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import ConfirmModal from '../components/ConfirmModal';
-import PhoneInput, { isBDPhoneValid } from '../components/PhoneInput';
+import PhoneInput from '../components/PhoneInput';
+import { isValidPhone, isSmsCapable } from '../utils/phone';
+import { MAX_BILL_IMAGES, getBillImages, getCoverBillImage } from '../utils/billImages';
 
 // Helper to sanitize SMS text: collapses multiple spaces, strips trailing whitespace, eliminates excess blank lines
 const cleanSmsText = (text) => {
@@ -46,10 +48,10 @@ const cleanSmsText = (text) => {
 };
 
 // Standard Due Reminder SMS Template (Well-spaced, no redundant blank lines, no double spaces)
-const DEFAULT_REMINDER_TEMPLATE = `Just a gentle reminder from chapaimango.bd
-Outstanding Due: BDT {due}
+const DEFAULT_REMINDER_TEMPLATE = `Gentle reminder from chapaimango.bd
+Total Due: BDT {due}
 
-Please clear the payment by {deadline}.
+Please clear the payment as soon as possible.
 For bill & payment details, visit: {billUrl}
 For live support, WhatsApp us at {whatsappNumber}
 
@@ -57,8 +59,7 @@ For live support, WhatsApp us at {whatsappNumber}
 
 // Ultra-Compact 1-SMS Cost Saver Template (Fits in 1 SMS < 160 characters)
 const COMPACT_REMINDER_TEMPLATE = `chapaimango.bd Due Reminder
-Due: BDT {due}
-Pay by: {deadline}
+Total Due: BDT {due}
 Bill: {billUrl}
 WhatsApp: {whatsappNumber}`;
 
@@ -95,12 +96,11 @@ const getPublicBillUrl = (shortCode) => {
 };
 
 // Replace dynamic placeholders and clean spaces
-const resolveReminderTemplate = ({ due, deadline, billUrl, whatsappNumber }, template = DEFAULT_REMINDER_TEMPLATE) => {
+const resolveReminderTemplate = ({ due, billUrl, whatsappNumber }, template = DEFAULT_REMINDER_TEMPLATE) => {
   const resolved = template
-    .replace('{due}', due || '0')
-    .replace('{deadline}', deadline || '15 September 2026')
-    .replace('{billUrl}', billUrl || 'xxxxxxxxxx')
-    .replace('{whatsappNumber}', whatsappNumber || '01717333880');
+    .replace(/\{(?:due|totalDue)\}/g, due || '0')
+    .replace(/\{billUrl\}/g, billUrl || 'xxxxxxxxxx')
+    .replace(/\{whatsappNumber\}/g, whatsappNumber || '01717333880');
   return cleanSmsText(resolved);
 };
 
@@ -114,7 +114,6 @@ const getCustomerReminderText = (customer, templateType = 'standard') => {
   return resolveReminderTemplate(
     {
       due,
-      deadline: '15 September 2026',
       billUrl,
       whatsappNumber: '01717333880',
     },
@@ -138,7 +137,6 @@ const CustomersPage = () => {
   const [standaloneSmsCustomer, setStandaloneSmsCustomer] = useState(null);
   const [standaloneSmsForm, setStandaloneSmsForm] = useState({
     due: '',
-    deadline: '15 September 2026',
     billUrl: '',
     whatsappNumber: '01717333880',
     directEdit: false,
@@ -152,7 +150,6 @@ const CustomersPage = () => {
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkTarget, setBulkTarget] = useState('due_only'); // 'due_only' | 'all' | 'selected'
   const [bulkTemplateType, setBulkTemplateType] = useState('compact');
-  const [bulkDeadline, setBulkDeadline] = useState('15 September 2026');
   const [bulkWhatsapp, setBulkWhatsapp] = useState('01717333880');
   const [bulkDirectEdit, setBulkDirectEdit] = useState(false);
   const [bulkCustomText, setBulkCustomText] = useState('');
@@ -171,7 +168,7 @@ const CustomersPage = () => {
     area: '',
     billShortCode: '',
     billDetailsText: '',
-    billImageUrl: '',
+    billImages: [],
   });
   const [showExtraFields, setShowExtraFields] = useState(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
@@ -182,7 +179,6 @@ const CustomersPage = () => {
   const [smsEnabled, setSmsEnabled] = useState(true);
   const [smsDueCustomized, setSmsDueCustomized] = useState(false);
   const [smsDue, setSmsDue] = useState('');
-  const [smsDeadline, setSmsDeadline] = useState('15 September 2026');
   const [smsBillUrl, setSmsBillUrl] = useState('');
   const [smsWhatsapp, setSmsWhatsapp] = useState('01717333880');
   const [isDirectEdit, setIsDirectEdit] = useState(false);
@@ -218,13 +214,12 @@ const CustomersPage = () => {
     return resolveReminderTemplate(
       {
         due: dueDisplay,
-        deadline: smsDeadline,
         billUrl: resolvedUrl,
         whatsappNumber: smsWhatsapp,
       },
       activeTemplate
     );
-  }, [isDirectEdit, customMessage, smsDueCustomized, smsDue, form.currentDue, smsBillUrl, form.billShortCode, smsDeadline, smsWhatsapp, smsTemplateType]);
+  }, [isDirectEdit, customMessage, smsDueCustomized, smsDue, form.currentDue, smsBillUrl, form.billShortCode, smsWhatsapp, smsTemplateType]);
 
   const addModalSmsMetrics = useMemo(() => calculateSmsMetrics(finalAddModalSmsText), [finalAddModalSmsText]);
 
@@ -235,7 +230,6 @@ const CustomersPage = () => {
     return resolveReminderTemplate(
       {
         due: standaloneSmsForm.due,
-        deadline: standaloneSmsForm.deadline,
         billUrl: standaloneSmsForm.billUrl,
         whatsappNumber: standaloneSmsForm.whatsappNumber,
       },
@@ -270,13 +264,12 @@ const CustomersPage = () => {
     return resolveReminderTemplate(
       {
         due,
-        deadline: bulkDeadline,
         billUrl,
         whatsappNumber: bulkWhatsapp,
       },
       activeTemplate
     );
-  }, [bulkDirectEdit, bulkCustomText, bulkTemplateType, bulkDeadline, bulkWhatsapp, sampleCustomer]);
+  }, [bulkDirectEdit, bulkCustomText, bulkTemplateType, bulkWhatsapp, sampleCustomer]);
 
   const bulkMetrics = useMemo(() => calculateSmsMetrics(bulkPreviewText), [bulkPreviewText]);
 
@@ -302,7 +295,6 @@ const CustomersPage = () => {
         customerIds: bulkTarget === 'selected' ? selectedCustomerIds : [],
         templateType: bulkTemplateType,
         customTemplate: bulkDirectEdit ? bulkCustomText : undefined,
-        deadline: bulkDeadline,
         whatsappNumber: bulkWhatsapp,
       };
 
@@ -399,12 +391,11 @@ const CustomersPage = () => {
       area: '',
       billShortCode: draftCode,
       billDetailsText: '',
-      billImageUrl: '',
+      billImages: [],
     });
     setSmsEnabled(true);
     setSmsDueCustomized(false);
     setSmsDue('');
-    setSmsDeadline('15 September 2026');
     setSmsBillUrl(generatedUrl);
     setSmsWhatsapp('01717333880');
     setIsDirectEdit(false);
@@ -431,12 +422,11 @@ const CustomersPage = () => {
       notes: customer.notes || '',
       billShortCode: shortCode,
       billDetailsText: customer.billDetailsText || '',
-      billImageUrl: customer.billImageUrl || '',
+      billImages: getBillImages(customer),
     });
     setSmsEnabled(false);
     setSmsDueCustomized(false);
     setSmsDue(customer.totalDue ? Number(customer.totalDue).toLocaleString('en-BD') : '0');
-    setSmsDeadline('15 September 2026');
     setSmsBillUrl(billUrl);
     setSmsWhatsapp('01717333880');
     setIsDirectEdit(false);
@@ -460,7 +450,7 @@ const CustomersPage = () => {
       area: '',
       billShortCode: '',
       billDetailsText: '',
-      billImageUrl: '',
+      billImages: [],
     });
     setPreviewSentHistory(null);
   };
@@ -479,30 +469,56 @@ const CustomersPage = () => {
     }
   };
 
-  // Handle Bill Memo Screenshot Upload
+  // Handle Bill Memo Screenshot Upload (one or many files at a time)
   const handleImageUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const picked = Array.from(e.target.files || []);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (picked.length === 0) return;
 
-    if (!file.type.startsWith('image/')) {
-      toast.error('Please upload an image file (JPEG, PNG, WEBP)');
+    const remaining = MAX_BILL_IMAGES - form.billImages.length;
+    if (remaining <= 0) {
+      toast.error(`You can attach up to ${MAX_BILL_IMAGES} images per customer`);
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('Image size must be less than 10MB');
-      return;
+    const valid = [];
+    for (const file of picked) {
+      if (!file.type.startsWith('image/')) {
+        toast.error(`${file.name} is not an image (JPEG, PNG, WEBP)`);
+        continue;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`${file.name} is larger than 10MB`);
+        continue;
+      }
+      valid.push(file);
+    }
+    if (valid.length === 0) return;
+
+    const accepted = valid.slice(0, remaining);
+    if (valid.length > remaining) {
+      toast.error(`Only ${remaining} more image${remaining === 1 ? '' : 's'} can be attached`);
     }
 
     const formData = new FormData();
-    formData.append('image', file);
+    accepted.forEach((file) => formData.append('images', file));
 
     setIsUploadingImage(true);
     try {
       const res = await customerAPI.uploadBillImage(formData);
-      const uploadedUrl = res.data?.data?.url || res.data?.url;
-      setForm((prev) => ({ ...prev, billImageUrl: uploadedUrl }));
-      toast.success('Screenshot / memo image uploaded successfully!');
+      const payload = res.data?.data || res.data || {};
+      const uploadedUrls = payload.urls || (payload.url ? [payload.url] : []);
+      if (uploadedUrls.length === 0) throw new Error('Upload returned no image URL');
+
+      setForm((prev) => ({
+        ...prev,
+        billImages: [...prev.billImages, ...uploadedUrls].slice(0, MAX_BILL_IMAGES),
+      }));
+      toast.success(
+        uploadedUrls.length === 1
+          ? 'Screenshot / memo image uploaded successfully!'
+          : `${uploadedUrls.length} images uploaded successfully!`
+      );
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to upload image');
     } finally {
@@ -510,27 +526,35 @@ const CustomersPage = () => {
     }
   };
 
-  // Handle removal of uploaded image from form and physical server storage
-  const handleRemoveImage = async () => {
-    const currentUrl = form.billImageUrl;
-    if (currentUrl) {
-      try {
-        await customerAPI.deleteBillImage({ url: currentUrl });
-      } catch (err) {
-        console.error('Failed to remove image from server storage:', err);
-      }
-    }
-    setForm((prev) => ({ ...prev, billImageUrl: '' }));
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+  // Remove one image from the gallery and from physical server storage
+  const handleRemoveImage = async (url) => {
+    if (!url) return;
+    setForm((prev) => ({ ...prev, billImages: prev.billImages.filter((u) => u !== url) }));
+    try {
+      await customerAPI.deleteBillImage({ url });
+    } catch (err) {
+      console.error('Failed to remove image from server storage:', err);
     }
     toast.success('Image removed from storage');
   };
 
+  // Promote an image to the cover shown in lists and atop the public bill page
+  const handleMakeCoverImage = (url) => {
+    setForm((prev) => ({
+      ...prev,
+      billImages: [url, ...prev.billImages.filter((u) => u !== url)],
+    }));
+    toast.success('Set as cover image');
+  };
+
   // Handle Send Preview / Test SMS in Add Customer modal
   const handleSendPreviewSms = async () => {
-    if (!form.phone || !isBDPhoneValid(form.phone)) {
-      toast.error('Please enter a valid 11-digit phone number first (e.g. 017XXXXXXXX)');
+    if (!isSmsCapable(form.phone)) {
+      toast.error(
+        isValidPhone(form.phone)
+          ? 'SMS can only be sent to Bangladeshi numbers. Use Send via WhatsApp for this customer.'
+          : 'Please enter a valid 11-digit phone number first (e.g. 017XXXXXXXX)'
+      );
       return;
     }
     setIsSendingPreview(true);
@@ -555,12 +579,12 @@ const CustomersPage = () => {
   // Handle Primary Form Submit
   const handleSubmit = (e) => {
     e.preventDefault();
-    if (!isBDPhoneValid(form.phone)) {
-      toast.error('Customer phone number must be exactly 11 digits (e.g. 017XXXXXXXX)');
+    if (!isValidPhone(form.phone)) {
+      toast.error('Please enter a valid phone number (e.g. 017XXXXXXXX, or pick a country for an overseas number)');
       return;
     }
-    if (form.altPhone && !isBDPhoneValid(form.altPhone)) {
-      toast.error('Alternative phone number must be exactly 11 digits (e.g. 017XXXXXXXX)');
+    if (form.altPhone && !isValidPhone(form.altPhone)) {
+      toast.error('The alternative phone number is not valid for the selected country');
       return;
     }
 
@@ -575,7 +599,7 @@ const CustomersPage = () => {
       area: form.area ? form.area.trim() : undefined,
       billShortCode: form.billShortCode,
       billDetailsText: form.billDetailsText ? form.billDetailsText.trim() : '',
-      billImageUrl: form.billImageUrl || '',
+      billImages: form.billImages,
       sendSms: !editingCustomer && smsEnabled,
       smsMessage: !editingCustomer && smsEnabled ? finalAddModalSmsText : undefined,
     };
@@ -610,13 +634,16 @@ const CustomersPage = () => {
 
   // Open Standalone SMS Reminder Modal for an existing customer
   const openStandaloneSmsModal = (customer) => {
+    if (!isSmsCapable(customer.phone)) {
+      toast.error(`${customer.name} has an international number. Use Send via WhatsApp instead.`);
+      return;
+    }
     const code = customer.billShortCode || customer._id;
     const billUrl = getPublicBillUrl(code);
 
     setStandaloneSmsCustomer(customer);
     setStandaloneSmsForm({
       due: customer.totalDue ? Number(customer.totalDue).toLocaleString('en-BD') : '0',
-      deadline: '15 September 2026',
       billUrl,
       whatsappNumber: '01717333880',
       directEdit: false,
@@ -909,9 +936,9 @@ const CustomersPage = () => {
 
                     <td>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                        {c.billImageUrl && (
+                        {getCoverBillImage(c) && (
                           <a
-                            href={getImageUrl(c.billImageUrl)}
+                            href={getImageUrl(getCoverBillImage(c))}
                             target="_blank"
                             rel="noopener noreferrer"
                             style={{
@@ -925,7 +952,11 @@ const CustomersPage = () => {
                             }}
                             title="Open screenshot in new tab"
                           >
-                            <ImageIcon size={11} /> Screenshot <ExternalLink size={10} />
+                            <ImageIcon size={11} />
+                            {getBillImages(c).length > 1
+                              ? `${getBillImages(c).length} Screenshots`
+                              : 'Screenshot'}
+                            <ExternalLink size={10} />
                           </a>
                         )}
 
@@ -1032,7 +1063,12 @@ const CustomersPage = () => {
                         <button
                           type="button"
                           className="btn btn-ghost btn-sm"
-                          title="Send Due Reminder SMS"
+                          disabled={!isSmsCapable(c.phone)}
+                          title={
+                            isSmsCapable(c.phone)
+                              ? 'Send Due Reminder SMS'
+                              : 'International number — send this reminder over WhatsApp'
+                          }
                           onClick={() => openStandaloneSmsModal(c)}
                           style={{
                             padding: '4px 8px',
@@ -1045,6 +1081,8 @@ const CustomersPage = () => {
                             alignItems: 'center',
                             gap: 4,
                             fontWeight: 600,
+                            opacity: isSmsCapable(c.phone) ? 1 : 0.4,
+                            cursor: isSmsCapable(c.phone) ? 'pointer' : 'not-allowed',
                           }}
                         >
                           <MessageSquare size={13} /> SMS
@@ -1223,7 +1261,7 @@ const CustomersPage = () => {
                 </div>
 
                 {/* Memo / Notes in card */}
-                {(c.billImageUrl || c.billDetailsText || c.notes) && (
+                {(getCoverBillImage(c) || c.billDetailsText || c.notes) && (
                   <div
                     style={{
                       fontSize: '0.75rem',
@@ -1237,9 +1275,9 @@ const CustomersPage = () => {
                       gap: 4,
                     }}
                   >
-                    {c.billImageUrl && (
+                    {getCoverBillImage(c) && (
                       <a
-                        href={getImageUrl(c.billImageUrl)}
+                        href={getImageUrl(getCoverBillImage(c))}
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{
@@ -1251,7 +1289,11 @@ const CustomersPage = () => {
                           textDecoration: 'none',
                         }}
                       >
-                        <ImageIcon size={12} /> Memo screenshot attached <ExternalLink size={10} />
+                        <ImageIcon size={12} />
+                        {getBillImages(c).length > 1
+                          ? `${getBillImages(c).length} memo screenshots attached`
+                          : 'Memo screenshot attached'}
+                        <ExternalLink size={10} />
                       </a>
                     )}
                     {c.billDetailsText && (
@@ -1272,8 +1314,18 @@ const CustomersPage = () => {
                   <button
                     type="button"
                     className="btn btn-ghost btn-sm"
+                    disabled={!isSmsCapable(c.phone)}
+                    title={
+                      isSmsCapable(c.phone)
+                        ? 'Send Due Reminder SMS'
+                        : 'International number — send this reminder over WhatsApp'
+                    }
                     onClick={() => openStandaloneSmsModal(c)}
-                    style={{ color: 'var(--accent-secondary)' }}
+                    style={{
+                      color: 'var(--accent-secondary)',
+                      opacity: isSmsCapable(c.phone) ? 1 : 0.4,
+                      cursor: isSmsCapable(c.phone) ? 'pointer' : 'not-allowed',
+                    }}
                   >
                     <MessageSquare size={14} /> SMS
                   </button>
@@ -1491,134 +1543,162 @@ const CustomersPage = () => {
                     />
                   </div>
 
-                  {/* Screenshot / Memo Image Upload */}
+                  {/* Screenshot / Memo Image Gallery */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    <label className="form-label" style={{ margin: 0 }}>
-                      Screenshot / Bill Slip Image
-                    </label>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <label className="form-label" style={{ margin: 0 }}>
+                        Screenshot / Bill Slip Images
+                      </label>
+                      <span style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', fontWeight: 600 }}>
+                        {form.billImages.length} / {MAX_BILL_IMAGES} attached
+                      </span>
+                    </div>
 
                     <input
                       type="file"
                       ref={fileInputRef}
                       onChange={handleImageUpload}
                       accept="image/*"
+                      multiple
                       style={{ display: 'none' }}
                     />
 
-                    {form.billImageUrl ? (
+                    {form.billImages.length > 0 && (
                       <div
                         style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          padding: '10px 14px',
-                          background: 'rgba(255, 255, 255, 0.04)',
-                          borderRadius: 'var(--radius-md)',
-                          border: '1px solid var(--border)',
-                          gap: 12,
+                          display: 'grid',
+                          gridTemplateColumns: 'repeat(auto-fill, minmax(104px, 1fr))',
+                          gap: 8,
                         }}
                       >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                          <a
-                            href={getImageUrl(form.billImageUrl)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            style={{ position: 'relative', display: 'block', flexShrink: 0 }}
-                            title="Click to view full image in new tab"
+                        {form.billImages.map((url, idx) => (
+                          <div
+                            key={url}
+                            style={{
+                              position: 'relative',
+                              borderRadius: 'var(--radius-md)',
+                              overflow: 'hidden',
+                              border: `1px solid ${idx === 0 ? 'rgba(243, 156, 18, 0.55)' : 'var(--border)'}`,
+                              background: '#111',
+                              aspectRatio: '1 / 1',
+                            }}
                           >
-                            <img
-                              src={getImageUrl(form.billImageUrl)}
-                              alt="Memo preview"
-                              style={{
-                                width: 56,
-                                height: 56,
-                                objectFit: 'cover',
-                                borderRadius: 8,
-                                border: '1px solid var(--border)',
-                                background: '#111',
-                              }}
-                              onError={(e) => {
-                                e.target.style.display = 'none';
-                              }}
-                            />
-                          </a>
-                          <div style={{ minWidth: 0 }}>
-                            <div style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                              Screenshot Attached
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-                              <a
-                                href={getImageUrl(form.billImageUrl)}
-                                target="_blank"
-                                rel="noopener noreferrer"
+                            <a
+                              href={getImageUrl(url)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title="Click to view the full image in a new tab"
+                              style={{ display: 'block', width: '100%', height: '100%' }}
+                            >
+                              <img
+                                src={getImageUrl(url)}
+                                alt={`Bill slip ${idx + 1}`}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                                onError={(e) => {
+                                  e.target.style.opacity = '0.25';
+                                }}
+                              />
+                            </a>
+
+                            {/* Cover badge on the first image */}
+                            {idx === 0 && (
+                              <span
                                 style={{
-                                  fontSize: '0.75rem',
-                                  color: 'var(--accent-secondary)',
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 4,
-                                  textDecoration: 'none',
+                                  position: 'absolute',
+                                  left: 5,
+                                  top: 5,
+                                  fontSize: '0.5625rem',
+                                  fontWeight: 800,
+                                  letterSpacing: '0.04em',
+                                  padding: '2px 6px',
+                                  borderRadius: 4,
+                                  background: 'rgba(243, 156, 18, 0.9)',
+                                  color: '#1a1206',
                                 }}
                               >
-                                <ExternalLink size={12} /> View uploaded image
-                              </a>
+                                COVER
+                              </span>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveImage(url)}
+                              title="Remove this image and delete it from storage"
+                              style={{
+                                position: 'absolute',
+                                right: 4,
+                                top: 4,
+                                width: 22,
+                                height: 22,
+                                borderRadius: '50%',
+                                border: 'none',
+                                background: 'rgba(10, 13, 20, 0.82)',
+                                color: '#ef4444',
+                                cursor: 'pointer',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                padding: 0,
+                              }}
+                            >
+                              <Trash2 size={12} />
+                            </button>
+
+                            {idx > 0 && (
                               <button
                                 type="button"
-                                onClick={() => fileInputRef.current?.click()}
+                                onClick={() => handleMakeCoverImage(url)}
+                                title="Use this image as the cover"
                                 style={{
-                                  background: 'none',
+                                  position: 'absolute',
+                                  left: 0,
+                                  right: 0,
+                                  bottom: 0,
                                   border: 'none',
-                                  padding: 0,
-                                  fontSize: '0.75rem',
+                                  background: 'rgba(10, 13, 20, 0.82)',
                                   color: 'var(--text-secondary)',
-                                  textDecoration: 'underline',
+                                  fontSize: '0.625rem',
+                                  fontWeight: 700,
+                                  padding: '3px 0',
                                   cursor: 'pointer',
                                 }}
                               >
-                                Replace
+                                Make cover
                               </button>
-                            </div>
+                            )}
                           </div>
-                        </div>
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          onClick={handleRemoveImage}
-                          style={{
-                            color: 'var(--danger)',
-                            height: 32,
-                            padding: '0 10px',
-                            fontSize: '0.75rem',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 5,
-                            border: '1px solid rgba(239, 68, 68, 0.2)',
-                          }}
-                          title="Remove image and delete from storage"
-                        >
-                          <Trash2 size={13} /> Remove
-                        </button>
+                        ))}
                       </div>
-                    ) : (
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        disabled={isUploadingImage}
-                        onClick={() => fileInputRef.current?.click()}
-                        style={{
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: 6,
-                          fontSize: '0.8125rem',
-                          height: 36,
-                          borderStyle: 'dashed',
-                        }}
-                      >
-                        {isUploadingImage ? <div className="spinner" /> : <Upload size={15} />}
-                        {isUploadingImage ? 'Uploading Image...' : 'Upload Memo Screenshot (JPG, PNG, WEBP)'}
-                      </button>
                     )}
+
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      disabled={isUploadingImage || form.billImages.length >= MAX_BILL_IMAGES}
+                      onClick={() => fileInputRef.current?.click()}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        fontSize: '0.8125rem',
+                        height: 36,
+                        borderStyle: 'dashed',
+                      }}
+                    >
+                      {isUploadingImage ? <div className="spinner" /> : <Upload size={15} />}
+                      {isUploadingImage
+                        ? 'Uploading Images...'
+                        : form.billImages.length >= MAX_BILL_IMAGES
+                        ? `Limit of ${MAX_BILL_IMAGES} images reached`
+                        : form.billImages.length > 0
+                        ? 'Add More Screenshots (JPG, PNG, WEBP)'
+                        : 'Upload Memo Screenshots (JPG, PNG, WEBP)'}
+                    </button>
+
+                    <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
+                      Select several files at once. All of them appear in the customer bill link, with the cover shown first.
+                    </div>
                   </div>
 
                   {/* Generated Customer Bill URL Info */}
@@ -1753,18 +1833,6 @@ const CustomersPage = () => {
                             />
                           </div>
 
-                          <div>
-                            <label style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>
-                              Payment Deadline
-                            </label>
-                            <input
-                              className="form-input"
-                              style={{ height: 32, fontSize: '0.75rem', padding: '4px 8px' }}
-                              value={smsDeadline}
-                              onChange={(e) => setSmsDeadline(e.target.value)}
-                              placeholder="e.g. 15 September 2026"
-                            />
-                          </div>
 
                           <div>
                             <label style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>
@@ -2106,17 +2174,6 @@ const CustomersPage = () => {
                   />
                 </div>
 
-                <div>
-                  <label style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>
-                    Payment Deadline
-                  </label>
-                  <input
-                    className="form-input"
-                    style={{ height: 32, fontSize: '0.75rem' }}
-                    value={standaloneSmsForm.deadline}
-                    onChange={(e) => setStandaloneSmsForm({ ...standaloneSmsForm, deadline: e.target.value })}
-                  />
-                </div>
 
                 <div>
                   <label style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>
@@ -2593,18 +2650,7 @@ const CustomersPage = () => {
               </div>
 
               {/* Dynamic Variables Grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                <div>
-                  <label style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>
-                    Payment Deadline
-                  </label>
-                  <input
-                    className="form-input"
-                    style={{ height: 32, fontSize: '0.75rem' }}
-                    value={bulkDeadline}
-                    onChange={(e) => setBulkDeadline(e.target.value)}
-                  />
-                </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
 
                 <div>
                   <label style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>

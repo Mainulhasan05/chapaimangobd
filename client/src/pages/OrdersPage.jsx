@@ -33,7 +33,8 @@ import {
 import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import ConfirmModal from '../components/ConfirmModal';
-import PhoneInput, { isBDPhoneValid } from '../components/PhoneInput';
+import PhoneInput from '../components/PhoneInput';
+import { isValidPhone } from '../utils/phone';
 import WhatsAppOrderModal from '../components/WhatsAppOrderModal';
 
 const formatSummaryDate = (dateStr) => {
@@ -138,7 +139,7 @@ const OrdersPage = () => {
 
   const handleQuickCustomerSubmit = (e) => {
     e.preventDefault();
-    if (!isBDPhoneValid(quickCustomerForm.phone)) {
+    if (!isValidPhone(quickCustomerForm.phone)) {
       toast.error('Customer phone number must be exactly 11 digits (e.g. 017XXXXXXXX)');
       return;
     }

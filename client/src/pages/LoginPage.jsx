@@ -226,6 +226,7 @@ const LoginPage = () => {
                     onChange={setForgotPhone}
                     required
                     autoFocus
+                    international={false}
                     placeholder="01722883710"
                     helperText="We will send a 6-digit verification code via SMS to this number."
                   />

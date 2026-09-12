@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { parsePhone, isSmsCapable } from './phone.js';
 
 /**
  * Automas SMS Gateway Service
@@ -25,25 +26,12 @@ export const cleanSmsText = (text) => {
     .trim();
 };
 
-// Helper to format Bangladesh phone number
+// Converts any stored number into the MSISDN the gateway expects.
+// Bangladeshi numbers become 8801XXXXXXXXX; anything else is passed through in
+// plain E.164 digits so the caller can decide what to do with it.
 export const formatMsisdn = (phone) => {
-  if (!phone) return '';
-  let cleaned = phone.toString().replace(/[^0-9]/g, '');
-
-  if (cleaned.startsWith('880')) {
-    return cleaned; // e.g. 8801712345678
-  }
-  if (cleaned.startsWith('88') && cleaned.length > 11) {
-    return cleaned.substring(2);
-  }
-  if (cleaned.length === 10 && cleaned.startsWith('1')) {
-    cleaned = '0' + cleaned;
-  }
-  if (cleaned.length === 11 && cleaned.startsWith('01')) {
-    // Automas accepts 8801XXXXXXXXX or 01XXXXXXXXX; prefix with 880 for standard delivery
-    return `88${cleaned}`;
-  }
-  return cleaned;
+  const { digits } = parsePhone(phone);
+  return digits;
 };
 
 export const AUTOMAS_STATUS_MESSAGES = {
@@ -126,6 +114,16 @@ export const sendSms = async ({ to, message }) => {
     return {
       success: false,
       error: 'Invalid recipient phone number',
+    };
+  }
+
+  // Automas is a domestic gateway. Reject foreign numbers up front rather than
+  // burning an API call and an SMS credit on a guaranteed rejection.
+  if (!isSmsCapable(to)) {
+    return {
+      success: false,
+      skipped: true,
+      error: 'SMS delivery is available for Bangladeshi numbers only. Reach this customer over WhatsApp instead.',
     };
   }
 

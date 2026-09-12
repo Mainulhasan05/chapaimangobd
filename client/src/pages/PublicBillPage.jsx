@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { customerAPI, getImageUrl } from '../api';
+import { getBillImages } from '../utils/billImages';
 import {
   Phone,
   MapPin,
@@ -17,6 +18,8 @@ import {
   Image as ImageIcon,
   CreditCard,
   Building2,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL
@@ -26,13 +29,39 @@ const API_BASE = import.meta.env.VITE_API_URL
 const PublicBillPage = () => {
   const { shortCode } = useParams();
   const [copiedKey, setCopiedKey] = useState(null);
-  const [isZoomed, setIsZoomed] = useState(false);
+  const [zoomIndex, setZoomIndex] = useState(null);
 
   const { data, isLoading, isError, error } = useQuery({
     queryKey: ['public-bill', shortCode],
     queryFn: () => customerAPI.getPublicBill(shortCode).then((r) => r.data.data),
     retry: 1,
   });
+
+  // Every bill image resolved to a full URL on the backend host. Declared here
+  // rather than next to the markup because the lightbox hooks below depend on
+  // it and must run before the loading/error early returns.
+  const billImages = getBillImages(data).map((url) => getImageUrl(url)).filter(Boolean);
+  const imageCount = billImages.length;
+
+  const showPrevImage = useCallback(() => {
+    setZoomIndex((idx) => (idx === null || imageCount === 0 ? null : (idx - 1 + imageCount) % imageCount));
+  }, [imageCount]);
+
+  const showNextImage = useCallback(() => {
+    setZoomIndex((idx) => (idx === null || imageCount === 0 ? null : (idx + 1) % imageCount));
+  }, [imageCount]);
+
+  // Arrow keys and Escape drive the lightbox on desktop
+  useEffect(() => {
+    if (zoomIndex === null) return undefined;
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape') setZoomIndex(null);
+      else if (e.key === 'ArrowLeft') showPrevImage();
+      else if (e.key === 'ArrowRight') showNextImage();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [zoomIndex, showPrevImage, showNextImage]);
 
   const copyToClipboard = (text, key) => {
     navigator.clipboard.writeText(text);
@@ -126,8 +155,6 @@ const PublicBillPage = () => {
   const customer = data;
   const isPaid = (customer.totalDue || 0) <= 0;
 
-  // Resolve full image URL pointing directly to backend host
-  const fullImageUrl = getImageUrl(customer.billImageUrl) || null;
 
   return (
     <div
@@ -369,9 +396,9 @@ const PublicBillPage = () => {
         )}
 
         {/* ========================================================
-            UPLOADED SCREENSHOT / MEMO IMAGE (IF IMAGE WAS UPLOADED)
+            UPLOADED SCREENSHOTS / MEMO IMAGES (IF ANY WERE UPLOADED)
            ======================================================== */}
-        {fullImageUrl && (
+        {billImages.length > 0 && (
           <div
             style={{
               background: 'rgba(26, 29, 40, 0.8)',
@@ -381,13 +408,28 @@ const PublicBillPage = () => {
               marginBottom: 16,
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: '0.875rem', color: '#fff' }}>
                 <ImageIcon size={16} style={{ color: '#f39c12' }} /> বিলের মেমো / স্ক্রিনশট (Bill Slip)
+                {billImages.length > 1 && (
+                  <span
+                    style={{
+                      fontSize: '0.6875rem',
+                      fontWeight: 700,
+                      color: '#f39c12',
+                      background: 'rgba(243, 156, 18, 0.14)',
+                      border: '1px solid rgba(243, 156, 18, 0.35)',
+                      borderRadius: 20,
+                      padding: '1px 8px',
+                    }}
+                  >
+                    {billImages.length}
+                  </span>
+                )}
               </div>
               <button
                 type="button"
-                onClick={() => setIsZoomed(true)}
+                onClick={() => setZoomIndex(0)}
                 style={{
                   background: 'none',
                   border: 'none',
@@ -398,12 +440,14 @@ const PublicBillPage = () => {
                   alignItems: 'center',
                   gap: 4,
                   fontWeight: 600,
+                  whiteSpace: 'nowrap',
                 }}
               >
-                <ZoomIn size={14} /> বড় করে দেখুন
+                <ZoomIn size={14} /> বড় করে দেখুন
               </button>
             </div>
 
+            {/* First image full width, the rest as a tappable grid below it */}
             <div
               style={{
                 borderRadius: 10,
@@ -416,14 +460,71 @@ const PublicBillPage = () => {
                 justifyContent: 'center',
                 background: '#000',
               }}
-              onClick={() => setIsZoomed(true)}
+              onClick={() => setZoomIndex(0)}
             >
               <img
-                src={fullImageUrl}
-                alt="Bill Slip"
+                src={billImages[0]}
+                alt="Bill Slip 1"
                 style={{ width: '100%', height: 'auto', objectFit: 'contain', display: 'block' }}
               />
             </div>
+
+            {billImages.length > 1 && (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(88px, 1fr))',
+                  gap: 8,
+                  marginTop: 10,
+                }}
+              >
+                {billImages.slice(1).map((src, idx) => (
+                  <button
+                    key={src}
+                    type="button"
+                    onClick={() => setZoomIndex(idx + 1)}
+                    style={{
+                      position: 'relative',
+                      padding: 0,
+                      border: '1px solid rgba(255, 255, 255, 0.08)',
+                      borderRadius: 8,
+                      overflow: 'hidden',
+                      background: '#000',
+                      cursor: 'pointer',
+                      aspectRatio: '1 / 1',
+                    }}
+                    aria-label={`View bill slip ${idx + 2}`}
+                  >
+                    <img
+                      src={src}
+                      alt={`Bill Slip ${idx + 2}`}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    />
+                    <span
+                      style={{
+                        position: 'absolute',
+                        left: 4,
+                        bottom: 4,
+                        fontSize: '0.5625rem',
+                        fontWeight: 700,
+                        color: '#fff',
+                        background: 'rgba(0, 0, 0, 0.6)',
+                        borderRadius: 4,
+                        padding: '1px 5px',
+                      }}
+                    >
+                      {idx + 2}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {billImages.length > 1 && (
+              <div style={{ fontSize: '0.6875rem', color: '#9aa0a6', marginTop: 8 }}>
+                মোট {billImages.length}টি ছবি সংযুক্ত আছে। যেকোনো ছবিতে ট্যাপ করে বড় করে দেখুন।
+              </div>
+            )}
           </div>
         )}
 
@@ -745,7 +846,7 @@ const PublicBillPage = () => {
       </div>
 
       {/* Image Zoom Modal */}
-      {isZoomed && fullImageUrl && (
+      {zoomIndex !== null && billImages[zoomIndex] && (
         <div
           style={{
             position: 'fixed',
@@ -757,11 +858,11 @@ const PublicBillPage = () => {
             justifyContent: 'center',
             padding: 16,
           }}
-          onClick={() => setIsZoomed(false)}
+          onClick={() => setZoomIndex(null)}
         >
           <button
             type="button"
-            onClick={() => setIsZoomed(false)}
+            onClick={() => setZoomIndex(null)}
             style={{
               position: 'absolute',
               top: 16,
@@ -776,13 +877,95 @@ const PublicBillPage = () => {
               justifyContent: 'center',
               color: '#fff',
               cursor: 'pointer',
+              zIndex: 2,
             }}
+            aria-label="Close"
           >
             <X size={22} />
           </button>
+
+          {billImages.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  showPrevImage();
+                }}
+                style={{
+                  position: 'absolute',
+                  left: 12,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'rgba(255, 255, 255, 0.15)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: 44,
+                  height: 44,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  zIndex: 2,
+                }}
+                aria-label="Previous image"
+              >
+                <ChevronLeft size={24} />
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  showNextImage();
+                }}
+                style={{
+                  position: 'absolute',
+                  right: 12,
+                  top: '50%',
+                  transform: 'translateY(-50%)',
+                  background: 'rgba(255, 255, 255, 0.15)',
+                  border: 'none',
+                  borderRadius: '50%',
+                  width: 44,
+                  height: 44,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#fff',
+                  cursor: 'pointer',
+                  zIndex: 2,
+                }}
+                aria-label="Next image"
+              >
+                <ChevronRight size={24} />
+              </button>
+
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: 18,
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  background: 'rgba(0, 0, 0, 0.6)',
+                  border: '1px solid rgba(255, 255, 255, 0.15)',
+                  color: '#fff',
+                  fontSize: '0.75rem',
+                  fontWeight: 700,
+                  padding: '4px 12px',
+                  borderRadius: 20,
+                  zIndex: 2,
+                }}
+              >
+                {zoomIndex + 1} / {billImages.length}
+              </div>
+            </>
+          )}
+
           <img
-            src={fullImageUrl}
-            alt="Zoomed Bill Memo"
+            src={billImages[zoomIndex]}
+            alt={`Zoomed Bill Memo ${zoomIndex + 1}`}
             style={{
               maxWidth: '96vw',
               maxHeight: '90vh',

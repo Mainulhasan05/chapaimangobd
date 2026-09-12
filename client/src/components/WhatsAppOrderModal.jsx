@@ -12,19 +12,13 @@ import {
   Sparkles,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { parsePhone, formatPhoneDisplay } from '../utils/phone';
 
 /**
- * Normalizes phone numbers to international Bangladesh WhatsApp format (e.g. 88017XXXXXXXX)
+ * Normalizes any stored number to the digits-only E.164 form wa.me expects
+ * (e.g. 8801712345678 for Bangladesh, 14155552671 for the United States).
  */
-export const getCleanWhatsAppPhone = (phone) => {
-  if (!phone) return '';
-  const digits = phone.toString().replace(/\D/g, '');
-  if (digits.startsWith('8801') && digits.length === 13) return digits;
-  if (digits.startsWith('01') && digits.length === 11) return `88${digits}`;
-  if (digits.startsWith('1') && digits.length === 10) return `880${digits}`;
-  if (digits.startsWith('88') && digits.length === 13) return digits;
-  return digits;
-};
+export const getCleanWhatsAppPhone = (phone) => parsePhone(phone).digits;
 
 /**
  * Generates formatted WhatsApp Markdown ready messages for an order
@@ -207,8 +201,9 @@ const WhatsAppOrderModal = ({ order, isOpen, onClose }) => {
 
   if (!isOpen || !order) return null;
 
-  const cleanPhone = getCleanWhatsAppPhone(selectedPhone);
-  const isPhoneValid = cleanPhone.length === 13 && cleanPhone.startsWith('8801');
+  const parsedPhone = parsePhone(selectedPhone);
+  const cleanPhone = parsedPhone.digits;
+  const isPhoneValid = parsedPhone.valid;
   const waUrl = isPhoneValid
     ? `https://wa.me/${cleanPhone}?text=${encodeURIComponent(messageText)}`
     : '';
@@ -358,7 +353,7 @@ const WhatsAppOrderModal = ({ order, isOpen, onClose }) => {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <Phone size={14} style={{ color: '#25D366' }} />
-                <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>{selectedPhone}</span>
+                <span style={{ fontWeight: 600, fontSize: '0.875rem' }}>{formatPhoneDisplay(selectedPhone)}</span>
               </div>
               {order.customer?.altPhone && (
                 <button
@@ -387,7 +382,7 @@ const WhatsAppOrderModal = ({ order, isOpen, onClose }) => {
                   className="badge badge-success"
                   style={{ fontSize: '0.625rem', padding: '1px 6px', backgroundColor: 'rgba(37, 211, 102, 0.15)', color: '#25D366' }}
                 >
-                  ✓ BD Format
+                  {parsedPhone.isBD ? '✓ BD Format' : `✓ +${parsedPhone.dial || ''}`}
                 </span>
               ) : (
                 <span className="badge badge-warning" style={{ fontSize: '0.625rem', padding: '1px 6px' }}>
