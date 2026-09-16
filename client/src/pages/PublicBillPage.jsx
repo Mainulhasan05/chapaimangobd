@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { customerAPI, getImageUrl } from '../api';
 import { getBillImages } from '../utils/billImages';
+import BillImageViewer from '../components/BillImageViewer';
 import {
   Phone,
   MapPin,
@@ -13,13 +14,10 @@ import {
   ExternalLink,
   MessageCircle,
   ZoomIn,
-  X,
   FileText,
   Image as ImageIcon,
   CreditCard,
   Building2,
-  ChevronLeft,
-  ChevronRight,
 } from 'lucide-react';
 
 const API_BASE = import.meta.env.VITE_API_URL
@@ -41,27 +39,7 @@ const PublicBillPage = () => {
   // rather than next to the markup because the lightbox hooks below depend on
   // it and must run before the loading/error early returns.
   const billImages = getBillImages(data).map((url) => getImageUrl(url)).filter(Boolean);
-  const imageCount = billImages.length;
 
-  const showPrevImage = useCallback(() => {
-    setZoomIndex((idx) => (idx === null || imageCount === 0 ? null : (idx - 1 + imageCount) % imageCount));
-  }, [imageCount]);
-
-  const showNextImage = useCallback(() => {
-    setZoomIndex((idx) => (idx === null || imageCount === 0 ? null : (idx + 1) % imageCount));
-  }, [imageCount]);
-
-  // Arrow keys and Escape drive the lightbox on desktop
-  useEffect(() => {
-    if (zoomIndex === null) return undefined;
-    const onKeyDown = (e) => {
-      if (e.key === 'Escape') setZoomIndex(null);
-      else if (e.key === 'ArrowLeft') showPrevImage();
-      else if (e.key === 'ArrowRight') showNextImage();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [zoomIndex, showPrevImage, showNextImage]);
 
   const copyToClipboard = (text, key) => {
     navigator.clipboard.writeText(text);
@@ -520,11 +498,27 @@ const PublicBillPage = () => {
               </div>
             )}
 
-            {billImages.length > 1 && (
-              <div style={{ fontSize: '0.6875rem', color: '#9aa0a6', marginTop: 8 }}>
-                মোট {billImages.length}টি ছবি সংযুক্ত আছে। যেকোনো ছবিতে ট্যাপ করে বড় করে দেখুন।
-              </div>
-            )}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: '0.6875rem',
+                color: '#f39c12',
+                background: 'rgba(243, 156, 18, 0.1)',
+                border: '1px solid rgba(243, 156, 18, 0.25)',
+                borderRadius: 8,
+                padding: '7px 10px',
+                marginTop: 10,
+                lineHeight: 1.5,
+              }}
+            >
+              <ZoomIn size={14} style={{ flexShrink: 0 }} />
+              <span>
+                {billImages.length > 1 ? `মোট ${billImages.length}টি ছবি আছে। ` : ''}
+                ছবিতে ট্যাপ করে খুলুন, তারপর দুইবার ট্যাপ বা পিঞ্চ করে লেখা বড় করে দেখুন।
+              </span>
+            </div>
           </div>
         )}
 
@@ -845,137 +839,14 @@ const PublicBillPage = () => {
         </div>
       </div>
 
-      {/* Image Zoom Modal */}
-      {zoomIndex !== null && billImages[zoomIndex] && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0, 0, 0, 0.92)',
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 16,
-          }}
-          onClick={() => setZoomIndex(null)}
-        >
-          <button
-            type="button"
-            onClick={() => setZoomIndex(null)}
-            style={{
-              position: 'absolute',
-              top: 16,
-              right: 16,
-              background: 'rgba(255, 255, 255, 0.15)',
-              border: 'none',
-              borderRadius: '50%',
-              width: 40,
-              height: 40,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#fff',
-              cursor: 'pointer',
-              zIndex: 2,
-            }}
-            aria-label="Close"
-          >
-            <X size={22} />
-          </button>
-
-          {billImages.length > 1 && (
-            <>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  showPrevImage();
-                }}
-                style={{
-                  position: 'absolute',
-                  left: 12,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'rgba(255, 255, 255, 0.15)',
-                  border: 'none',
-                  borderRadius: '50%',
-                  width: 44,
-                  height: 44,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  zIndex: 2,
-                }}
-                aria-label="Previous image"
-              >
-                <ChevronLeft size={24} />
-              </button>
-
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  showNextImage();
-                }}
-                style={{
-                  position: 'absolute',
-                  right: 12,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  background: 'rgba(255, 255, 255, 0.15)',
-                  border: 'none',
-                  borderRadius: '50%',
-                  width: 44,
-                  height: 44,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: '#fff',
-                  cursor: 'pointer',
-                  zIndex: 2,
-                }}
-                aria-label="Next image"
-              >
-                <ChevronRight size={24} />
-              </button>
-
-              <div
-                style={{
-                  position: 'absolute',
-                  bottom: 18,
-                  left: '50%',
-                  transform: 'translateX(-50%)',
-                  background: 'rgba(0, 0, 0, 0.6)',
-                  border: '1px solid rgba(255, 255, 255, 0.15)',
-                  color: '#fff',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  padding: '4px 12px',
-                  borderRadius: 20,
-                  zIndex: 2,
-                }}
-              >
-                {zoomIndex + 1} / {billImages.length}
-              </div>
-            </>
-          )}
-
-          <img
-            src={billImages[zoomIndex]}
-            alt={`Zoomed Bill Memo ${zoomIndex + 1}`}
-            style={{
-              maxWidth: '96vw',
-              maxHeight: '90vh',
-              objectFit: 'contain',
-              borderRadius: 8,
-              boxShadow: '0 8px 32px rgba(0,0,0,0.8)',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          />
-        </div>
+      {/* Full-screen zoomable bill slip viewer */}
+      {zoomIndex !== null && (
+        <BillImageViewer
+          images={billImages}
+          index={zoomIndex}
+          onIndexChange={setZoomIndex}
+          onClose={() => setZoomIndex(null)}
+        />
       )}
     </div>
   );

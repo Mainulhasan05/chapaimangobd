@@ -42,7 +42,7 @@ export const calculateSmsCredits = (text) => {
 // Single Source of Truth for generating exact rendered SMS text
 export const buildFinalSmsText = ({ template, customer, smsFooter = 'ChapaiMango.bd', appendSmsFooter = true }) => {
   const data = {
-    name: customer.name || '',
+    name: (customer.name || '').trim() || 'Customer',
     phone: customer.phone || '',
     totalDue: customer.totalDue !== undefined ? customer.totalDue : 0,
     totalPurchases: customer.totalPurchases !== undefined ? customer.totalPurchases : 0,

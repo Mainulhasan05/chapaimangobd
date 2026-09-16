@@ -48,7 +48,8 @@ const cleanSmsText = (text) => {
 };
 
 // Standard Due Reminder SMS Template (Well-spaced, no redundant blank lines, no double spaces)
-const DEFAULT_REMINDER_TEMPLATE = `Gentle reminder from chapaimango.bd
+const DEFAULT_REMINDER_TEMPLATE = `Dear {name},
+Gentle reminder from chapaimango.bd
 Total Due: BDT {due}
 
 Please clear the payment as soon as possible.
@@ -96,8 +97,9 @@ const getPublicBillUrl = (shortCode) => {
 };
 
 // Replace dynamic placeholders and clean spaces
-const resolveReminderTemplate = ({ due, billUrl, whatsappNumber }, template = DEFAULT_REMINDER_TEMPLATE) => {
+const resolveReminderTemplate = ({ name, due, billUrl, whatsappNumber }, template = DEFAULT_REMINDER_TEMPLATE) => {
   const resolved = template
+    .replace(/\{name\}/g, (name || '').trim() || 'Customer')
     .replace(/\{(?:due|totalDue)\}/g, due || '0')
     .replace(/\{billUrl\}/g, billUrl || 'xxxxxxxxxx')
     .replace(/\{whatsappNumber\}/g, whatsappNumber || '01717333880');
@@ -113,6 +115,7 @@ const getCustomerReminderText = (customer, templateType = 'standard') => {
   const activeTemplate = templateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
   return resolveReminderTemplate(
     {
+      name: customer.name,
       due,
       billUrl,
       whatsappNumber: '01717333880',
@@ -213,13 +216,14 @@ const CustomersPage = () => {
     const activeTemplate = smsTemplateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
     return resolveReminderTemplate(
       {
+        name: form.name,
         due: dueDisplay,
         billUrl: resolvedUrl,
         whatsappNumber: smsWhatsapp,
       },
       activeTemplate
     );
-  }, [isDirectEdit, customMessage, smsDueCustomized, smsDue, form.currentDue, smsBillUrl, form.billShortCode, smsWhatsapp, smsTemplateType]);
+  }, [isDirectEdit, customMessage, smsDueCustomized, smsDue, form.currentDue, form.name, smsBillUrl, form.billShortCode, smsWhatsapp, smsTemplateType]);
 
   const addModalSmsMetrics = useMemo(() => calculateSmsMetrics(finalAddModalSmsText), [finalAddModalSmsText]);
 
@@ -229,13 +233,14 @@ const CustomersPage = () => {
     const activeTemplate = standaloneSmsTemplateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
     return resolveReminderTemplate(
       {
+        name: standaloneSmsCustomer?.name,
         due: standaloneSmsForm.due,
         billUrl: standaloneSmsForm.billUrl,
         whatsappNumber: standaloneSmsForm.whatsappNumber,
       },
       activeTemplate
     );
-  }, [standaloneSmsForm, standaloneSmsTemplateType]);
+  }, [standaloneSmsCustomer, standaloneSmsForm, standaloneSmsTemplateType]);
 
   const standaloneSmsMetrics = useMemo(() => calculateSmsMetrics(finalStandaloneSmsText), [finalStandaloneSmsText]);
 
@@ -263,6 +268,7 @@ const CustomersPage = () => {
     const billUrl = getPublicBillUrl(sampleCustomer.billShortCode || 'sample');
     return resolveReminderTemplate(
       {
+        name: sampleCustomer.name,
         due,
         billUrl,
         whatsappNumber: bulkWhatsapp,

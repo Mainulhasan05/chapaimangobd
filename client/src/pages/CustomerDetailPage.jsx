@@ -47,7 +47,8 @@ const cleanSmsText = (text) => {
 };
 
 // Standard Due Reminder SMS Template (Well-spaced, no redundant blank lines, no double spaces)
-const DEFAULT_REMINDER_TEMPLATE = `Gentle reminder from chapaimango.bd
+const DEFAULT_REMINDER_TEMPLATE = `Dear {name},
+Gentle reminder from chapaimango.bd
 Total Due: BDT {due}
 
 Please clear the payment as soon as possible.
@@ -125,6 +126,7 @@ const CustomerDetailPage = () => {
     const dueVal = smsForm.due || (customer?.totalDue ? Number(customer.totalDue).toLocaleString('en-BD') : '0');
     const activeTemplate = smsTemplateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
     const resolved = activeTemplate
+      .replace(/\{name\}/g, (customer?.name || '').trim() || 'Customer')
       .replace(/\{(?:due|totalDue)\}/g, dueVal)
       .replace(/\{billUrl\}/g, smsForm.billUrl || 'xxxxxxxxxx')
       .replace(/\{whatsappNumber\}/g, smsForm.whatsappNumber || '01717333880');

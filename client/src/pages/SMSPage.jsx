@@ -41,7 +41,8 @@ const templateVariables = [
 const sampleTemplates = [
   {
     title: 'Gentle Due Reminder (Standard)',
-    text: `Gentle reminder from chapaimango.bd
+    text: `Dear {name},
+Gentle reminder from chapaimango.bd
 Total Due: BDT {totalDue}
 
 Please clear the payment as soon as possible.

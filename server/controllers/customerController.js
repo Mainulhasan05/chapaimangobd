@@ -839,7 +839,8 @@ export const sendBulkDueReminders = async (req, res, next) => {
       customTemplate && customTemplate.trim()
         ? customTemplate
         : templateType === 'standard'
-        ? `Gentle reminder from chapaimango.bd
+        ? `Dear {name},
+Gentle reminder from chapaimango.bd
 Total Due: BDT {due}
 
 Please clear the payment as soon as possible.
@@ -881,7 +882,7 @@ WhatsApp: {whatsappNumber}`;
           .replace(/\{(?:due|totalDue)\}/g, dueFormatted)
           .replace(/\{billUrl\}/g, billUrl)
           .replace(/\{whatsappNumber\}/g, whatsappNumber)
-          .replace(/\{name\}/g, customer.name || '')
+          .replace(/\{name\}/g, (customer.name || '').trim() || 'Customer')
       );
 
       const stats = calculateSmsCredits(resolvedText);
