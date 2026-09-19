@@ -141,6 +141,88 @@ export const generateUniqueShortCode = async () => {
   return Math.random().toString(36).substring(2, 8);
 };
 
+// Reusable helper for dispatching an SMS to a single customer with logging and stats tracking
+export const dispatchSingleCustomerSms = async ({
+  customer,
+  message,
+  req,
+  action = 'SMS_CUSTOMER_NOTIFICATION',
+  descriptionPrefix = 'Dispatched SMS to customer',
+}) => {
+  if (!message || !message.trim()) return null;
+  const cleanPhone = normalizePhone(customer.phone);
+
+  if (!isSmsCapable(cleanPhone)) {
+    return {
+      success: false,
+      skipped: true,
+      error: 'SMS skipped: domestic gateway cannot deliver to international numbers. Use WhatsApp instead.',
+    };
+  }
+
+  try {
+    const trimmedMessage = cleanSmsText(message);
+    const customSenderId = await Setting.get('smsSenderId', process.env.SMS_SENDER_ID || '8809617639998');
+    const sendRes = await sendSms({ to: cleanPhone, message: trimmedMessage });
+    const stats = calculateSmsCredits(trimmedMessage);
+
+    const smsLog = await SmsLog.create({
+      recipients: [{ customer: customer._id, phone: customer.phone, name: customer.name }],
+      template: trimmedMessage,
+      resolvedTexts: [
+        {
+          name: customer.name,
+          phone: customer.phone,
+          text: trimmedMessage,
+          charCount: stats.charCount,
+          credits: stats.credits,
+          isUnicode: stats.isUnicode,
+          status: sendRes.success ? 'sent' : 'failed',
+          error: sendRes.error,
+        },
+      ],
+      totalCredits: stats.credits,
+      senderId: customSenderId || process.env.SMS_SENDER_ID || '8809617639998',
+      totalSent: sendRes.success ? 1 : 0,
+      totalFailed: sendRes.success ? 0 : 1,
+      status: sendRes.success ? 'sent' : 'failed',
+    });
+
+    if (sendRes.success) {
+      await Customer.updateOne(
+        { _id: customer._id },
+        {
+          $inc: { totalSmsSent: 1 },
+          $set: { lastSmsSentAt: new Date() },
+        }
+      ).catch(() => {});
+    }
+
+    await createAuditLog({
+      req,
+      action,
+      category: 'SMS',
+      description: sendRes.success
+        ? `${descriptionPrefix}: ${customer.name} (${customer.phone})`
+        : `Failed ${descriptionPrefix}: ${customer.name} (${customer.phone}): ${sendRes.error}`,
+      targetId: smsLog._id,
+      targetType: 'SMS',
+      status: sendRes.success ? 'SUCCESS' : 'FAILED',
+      details: { phone: customer.phone, message: trimmedMessage, error: sendRes.error },
+    });
+
+    return {
+      success: sendRes.success,
+      error: sendRes.error,
+      credits: stats.credits,
+      logId: smsLog._id,
+    };
+  } catch (smsErr) {
+    console.error('[dispatchSingleCustomerSms error]:', smsErr.message);
+    return { success: false, error: smsErr.message };
+  }
+};
+
 // @desc    Create customer
 // @route   POST /api/customers
 export const createCustomer = async (req, res, next) => {
@@ -212,72 +294,14 @@ export const createCustomer = async (req, res, next) => {
     });
 
     let smsResult = null;
-    if (shouldSendSms && smsMessage && smsMessage.trim() && !isSmsCapable(cleanPhone)) {
-      // Automas only delivers to Bangladeshi operators; the admin can still
-      // reach this customer through the WhatsApp button on the customer row.
-      smsResult = {
-        success: false,
-        skipped: true,
-        error: 'SMS skipped: the domestic gateway cannot deliver to international numbers. Use WhatsApp instead.',
-      };
-    } else if (shouldSendSms && smsMessage && smsMessage.trim()) {
-      try {
-        const trimmedMessage = cleanSmsText(smsMessage);
-        const customSenderId = await Setting.get('smsSenderId', process.env.SMS_SENDER_ID || '8809617639998');
-        const sendRes = await sendSms({ to: cleanPhone, message: trimmedMessage });
-        const stats = calculateSmsCredits(trimmedMessage);
-
-        const smsLog = await SmsLog.create({
-          recipients: [{ customer: customer._id, phone: customer.phone, name: customer.name }],
-          template: trimmedMessage,
-          resolvedTexts: [
-            {
-              name: customer.name,
-              phone: customer.phone,
-              text: trimmedMessage,
-              charCount: stats.charCount,
-              credits: stats.credits,
-              isUnicode: stats.isUnicode,
-              status: sendRes.success ? 'sent' : 'failed',
-              error: sendRes.error,
-            },
-          ],
-          totalCredits: stats.credits,
-          senderId: customSenderId || process.env.SMS_SENDER_ID || '8809617639998',
-          totalSent: sendRes.success ? 1 : 0,
-          totalFailed: sendRes.success ? 0 : 1,
-          status: sendRes.success ? 'sent' : 'failed',
-        });
-
-        if (sendRes.success) {
-          customer.totalSmsSent = 1;
-          customer.lastSmsSentAt = new Date();
-          await customer.save();
-        }
-
-        smsResult = {
-          success: sendRes.success,
-          error: sendRes.error,
-          credits: stats.credits,
-          logId: smsLog._id,
-        };
-
-        await createAuditLog({
-          req,
-          action: 'SMS_CUSTOMER_ONBOARD',
-          category: 'SMS',
-          description: sendRes.success
-            ? `Dispatched reminder SMS to new customer: ${customer.name} (${customer.phone})`
-            : `Failed to dispatch reminder SMS to new customer: ${customer.name} (${customer.phone}): ${sendRes.error}`,
-          targetId: smsLog._id,
-          targetType: 'SMS',
-          status: sendRes.success ? 'SUCCESS' : 'FAILED',
-          details: { phone: customer.phone, message: trimmedMessage, error: sendRes.error },
-        });
-      } catch (smsErr) {
-        console.error('[createCustomer SMS dispatch error]:', smsErr.message);
-        smsResult = { success: false, error: smsErr.message };
-      }
+    if (shouldSendSms && smsMessage && smsMessage.trim()) {
+      smsResult = await dispatchSingleCustomerSms({
+        customer,
+        message: smsMessage,
+        req,
+        action: 'SMS_CUSTOMER_ONBOARD',
+        descriptionPrefix: 'Dispatched reminder SMS to new customer',
+      });
     }
 
     await createAuditLog({
@@ -325,6 +349,8 @@ export const updateCustomer = async (req, res, next) => {
       billImageUrl,
       billImages,
       billShortCode,
+      sendSms: shouldSendSms,
+      smsMessage,
     } = req.body;
 
     const cleanPhone = phone ? normalizePhone(phone) : undefined;
@@ -433,7 +459,18 @@ export const updateCustomer = async (req, res, next) => {
       },
     });
 
-    res.status(200).json({ success: true, data: customer });
+    let smsResult = null;
+    if (shouldSendSms && smsMessage && smsMessage.trim()) {
+      smsResult = await dispatchSingleCustomerSms({
+        customer,
+        message: smsMessage,
+        req,
+        action: 'SMS_CUSTOMER_UPDATE',
+        descriptionPrefix: 'Dispatched SMS notification/thank-you on customer update',
+      });
+    }
+
+    res.status(200).json({ success: true, data: customer, smsResult });
   } catch (error) {
     next(error);
   }
@@ -645,7 +682,7 @@ export const getCustomerLedger = async (req, res, next) => {
 // @route   POST /api/customers/:id/payment
 export const recordPayment = async (req, res, next) => {
   try {
-    const { amount, method, note } = req.body;
+    const { amount, method, note, sendSms: shouldSendSms, smsMessage } = req.body;
     const customerId = req.params.id;
 
     if (!amount || amount <= 0) {
@@ -726,7 +763,18 @@ export const recordPayment = async (req, res, next) => {
       },
     });
 
-    res.status(201).json({ success: true, data: { payment, customer } });
+    let smsResult = null;
+    if (shouldSendSms && smsMessage && smsMessage.trim()) {
+      smsResult = await dispatchSingleCustomerSms({
+        customer,
+        message: smsMessage,
+        req,
+        action: 'SMS_PAYMENT_RECEIPT',
+        descriptionPrefix: 'Dispatched payment receipt / thank-you SMS',
+      });
+    }
+
+    res.status(201).json({ success: true, data: { payment, customer }, smsResult });
   } catch (error) {
     next(error);
   }
@@ -806,10 +854,9 @@ export const sendBulkDueReminders = async (req, res, next) => {
       whatsappNumber = '01717333880',
     } = req.body;
 
-    const query = {};
-    if (target === 'due_only') {
-      query.totalDue = { $gt: 0 };
-    } else if (target === 'selected' && Array.isArray(customerIds) && customerIds.length > 0) {
+    // Enforce totalDue > 0 for all targets: never send due reminders to customers with 0 or negative due
+    const query = { totalDue: { $gt: 0 } };
+    if (target === 'selected' && Array.isArray(customerIds) && customerIds.length > 0) {
       query._id = { $in: customerIds };
     }
 
@@ -821,7 +868,9 @@ export const sendBulkDueReminders = async (req, res, next) => {
         message:
           target === 'due_only'
             ? 'No customers with standing due found'
-            : 'No customers found to dispatch reminders',
+            : target === 'selected'
+            ? 'None of the selected customers have a standing due balance (> 0)'
+            : 'No customers with standing due found to dispatch reminders',
       });
     }
 
@@ -858,10 +907,19 @@ WhatsApp: {whatsappNumber}`;
     // Customers reachable only over WhatsApp, reported back so the admin knows
     // who still needs a nudge.
     const skippedInternational = [];
+    // Customers with 0 or negative due balance, strictly skipped from receiving due reminders
+    const skippedZeroDue = [];
     let calculatedTotalCredits = 0;
 
     for (const customer of customers) {
       if (!customer.phone) continue;
+
+      // Double-check due balance: if 0 or negative, never send due reminder
+      if (Number(customer.totalDue || 0) <= 0) {
+        skippedZeroDue.push({ name: customer.name, phone: customer.phone, totalDue: customer.totalDue });
+        continue;
+      }
+
       if (!isSmsCapable(customer.phone)) {
         skippedInternational.push({ name: customer.name, phone: customer.phone });
         continue;
@@ -906,12 +964,16 @@ WhatsApp: {whatsappNumber}`;
     }
 
     if (smsItems.length === 0) {
+      let failureMessage = 'None of the selected customers have a valid phone number';
+      if (skippedZeroDue.length > 0) {
+        failureMessage = `All ${skippedZeroDue.length} selected customers have 0 or completed due balance. Due reminders are never sent when due balance is 0 or negative.`;
+      } else if (skippedInternational.length > 0) {
+        failureMessage = `All ${skippedInternational.length} selected customers have international numbers. The SMS gateway is Bangladesh only, so send these reminders over WhatsApp instead.`;
+      }
       return res.status(400).json({
         success: false,
-        message: skippedInternational.length
-          ? `All ${skippedInternational.length} selected customers have international numbers. The SMS gateway is Bangladesh only, so send these reminders over WhatsApp instead.`
-          : 'None of the selected customers have a valid phone number',
-        data: { skippedInternational },
+        message: failureMessage,
+        data: { skippedInternational, skippedZeroDue },
       });
     }
 
@@ -982,27 +1044,31 @@ WhatsApp: {whatsappNumber}`;
         totalFailed,
         totalCredits: calculatedTotalCredits,
         totalSkippedInternational: skippedInternational.length,
+        totalSkippedZeroDue: skippedZeroDue.length,
         target,
       },
     });
+
+    const notes = [];
+    if (skippedZeroDue.length > 0) {
+      notes.push(`${skippedZeroDue.length} customer(s) with 0 or negative due were safely excluded`);
+    }
+    if (skippedInternational.length > 0) {
+      notes.push(`${skippedInternational.length} international number(s) skipped (WhatsApp only)`);
+    }
 
     res.status(200).json({
       success: true,
       message: `Due reminder SMS dispatched to ${totalSent} customers${
         totalFailed > 0 ? ` (${totalFailed} failed)` : ''
-      }${
-        skippedInternational.length
-          ? ` — ${skippedInternational.length} international ${
-              skippedInternational.length === 1 ? 'number was' : 'numbers were'
-            } skipped, send those over WhatsApp`
-          : ''
-      }`,
+      }${notes.length > 0 ? ` (${notes.join(', ')})` : ''}`,
       data: {
         totalRecipients: recipients.length,
         totalSent,
         totalFailed,
         totalCredits: calculatedTotalCredits,
         skippedInternational,
+        skippedZeroDue,
         logId: smsLog._id,
       },
     });

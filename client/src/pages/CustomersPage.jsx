@@ -64,6 +64,18 @@ Total Due: BDT {due}
 Bill: {billUrl}
 WhatsApp: {whatsappNumber}`;
 
+// Standard Thank You for Clearing Due Template
+const DEFAULT_THANK_YOU_TEMPLATE = `Dear {name},
+Thank you for clearing your due with chapaimango.bd! Your payment has been received and your due balance is now BDT 0.
+
+For your bill summary, visit: {billUrl}
+For any support, WhatsApp us at {whatsappNumber}
+
+-Chapai Mango Team`;
+
+// Ultra-Compact 1-SMS Thank You Template
+const COMPACT_THANK_YOU_TEMPLATE = `chapaimango.bd: Dear {name}, thank you for clearing your due! Current due balance: BDT 0. Bill: {billUrl}`;
+
 // Calculate character count and SMS tokens (GSM 03.40 / Unicode)
 const calculateSmsMetrics = (text) => {
   if (!text) return { charCount: 0, credits: 0, isUnicode: false };
@@ -106,13 +118,19 @@ const resolveReminderTemplate = ({ name, due, billUrl, whatsappNumber }, templat
   return cleanSmsText(resolved);
 };
 
-// Generate formatted reminder message for any customer record
+// Generate formatted message (Due Reminder or Thank You) for any customer record
 const getCustomerReminderText = (customer, templateType = 'standard') => {
   if (!customer) return '';
   const code = customer.billShortCode || customer._id;
   const billUrl = getPublicBillUrl(code);
   const due = customer.totalDue ? Number(customer.totalDue).toLocaleString('en-BD') : '0';
-  const activeTemplate = templateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
+  const isCleared = (customer.totalDue !== undefined ? Number(customer.totalDue) <= 0 : false);
+  let activeTemplate;
+  if (isCleared) {
+    activeTemplate = templateType === 'compact' ? COMPACT_THANK_YOU_TEMPLATE : DEFAULT_THANK_YOU_TEMPLATE;
+  } else {
+    activeTemplate = templateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
+  }
   return resolveReminderTemplate(
     {
       name: customer.name,
@@ -131,6 +149,7 @@ const CustomersPage = () => {
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [showPaymentModal, setShowPaymentModal] = useState(null);
   const [paymentForm, setPaymentForm] = useState({ amount: '', method: 'cash', note: '' });
+  const [paymentSendSms, setPaymentSendSms] = useState(true);
   const [filterDue, setFilterDue] = useState('');
   const [customerToDelete, setCustomerToDelete] = useState(null);
   const [selectedNoteCustomer, setSelectedNoteCustomer] = useState(null);
@@ -177,7 +196,7 @@ const CustomersPage = () => {
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const fileInputRef = useRef(null);
 
-  // SMS Reminder Section in Customer Modal
+  // SMS Section in Customer Modal
   const [smsTemplateType, setSmsTemplateType] = useState('standard');
   const [smsEnabled, setSmsEnabled] = useState(true);
   const [smsDueCustomized, setSmsDueCustomized] = useState(false);
@@ -204,7 +223,29 @@ const CustomersPage = () => {
   const customers = data?.data || [];
   const pagination = data?.pagination || {};
 
+  // Resolved Thank You SMS for payment modal
+  const resolvedPaymentThankYouText = useMemo(() => {
+    if (!showPaymentModal) return '';
+    const code = showPaymentModal.billShortCode || showPaymentModal._id;
+    const billUrl = getPublicBillUrl(code);
+    return resolveReminderTemplate(
+      {
+        name: showPaymentModal.name,
+        due: '0',
+        billUrl,
+        whatsappNumber: '01717333880',
+      },
+      COMPACT_THANK_YOU_TEMPLATE
+    );
+  }, [showPaymentModal]);
+
+  const paymentSmsMetrics = useMemo(() => calculateSmsMetrics(resolvedPaymentThankYouText), [resolvedPaymentThankYouText]);
+
   // Calculate resolved text for Add/Edit modal
+  const isEditingDueZero = Boolean(
+    (parseFloat(form.currentDue) || 0) <= 0
+  );
+
   const finalAddModalSmsText = useMemo(() => {
     if (isDirectEdit) return cleanSmsText(customMessage);
     const dueDisplay = smsDueCustomized
@@ -213,7 +254,13 @@ const CustomersPage = () => {
       ? Number(form.currentDue).toLocaleString('en-BD')
       : '0';
     const resolvedUrl = smsBillUrl || getPublicBillUrl(form.billShortCode);
-    const activeTemplate = smsTemplateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
+    const isThankYou = (editingCustomer && isEditingDueZero) || (isEditingDueZero && (form.currentDue === '0' || form.currentDue === 0));
+    let activeTemplate;
+    if (isThankYou) {
+      activeTemplate = smsTemplateType === 'compact' ? COMPACT_THANK_YOU_TEMPLATE : DEFAULT_THANK_YOU_TEMPLATE;
+    } else {
+      activeTemplate = smsTemplateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
+    }
     return resolveReminderTemplate(
       {
         name: form.name,
@@ -223,24 +270,33 @@ const CustomersPage = () => {
       },
       activeTemplate
     );
-  }, [isDirectEdit, customMessage, smsDueCustomized, smsDue, form.currentDue, form.name, smsBillUrl, form.billShortCode, smsWhatsapp, smsTemplateType]);
+  }, [isDirectEdit, customMessage, smsDueCustomized, smsDue, form.currentDue, form.name, smsBillUrl, form.billShortCode, smsWhatsapp, smsTemplateType, editingCustomer, isEditingDueZero]);
 
   const addModalSmsMetrics = useMemo(() => calculateSmsMetrics(finalAddModalSmsText), [finalAddModalSmsText]);
+
+  const isStandaloneDueCleared = Boolean(
+    standaloneSmsCustomer && (standaloneSmsCustomer.totalDue !== undefined ? Number(standaloneSmsCustomer.totalDue) <= 0 : false)
+  );
 
   // Calculate resolved text for standalone SMS modal
   const finalStandaloneSmsText = useMemo(() => {
     if (standaloneSmsForm.directEdit) return cleanSmsText(standaloneSmsForm.customText);
-    const activeTemplate = standaloneSmsTemplateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
+    let activeTemplate;
+    if (isStandaloneDueCleared) {
+      activeTemplate = standaloneSmsTemplateType === 'compact' ? COMPACT_THANK_YOU_TEMPLATE : DEFAULT_THANK_YOU_TEMPLATE;
+    } else {
+      activeTemplate = standaloneSmsTemplateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
+    }
     return resolveReminderTemplate(
       {
         name: standaloneSmsCustomer?.name,
-        due: standaloneSmsForm.due,
+        due: standaloneSmsForm.due || '0',
         billUrl: standaloneSmsForm.billUrl,
         whatsappNumber: standaloneSmsForm.whatsappNumber,
       },
       activeTemplate
     );
-  }, [standaloneSmsCustomer, standaloneSmsForm, standaloneSmsTemplateType]);
+  }, [standaloneSmsCustomer, standaloneSmsForm, standaloneSmsTemplateType, isStandaloneDueCleared]);
 
   const standaloneSmsMetrics = useMemo(() => calculateSmsMetrics(finalStandaloneSmsText), [finalStandaloneSmsText]);
 
@@ -346,10 +402,21 @@ const CustomersPage = () => {
   // Update Customer Mutation
   const updateMutation = useMutation({
     mutationFn: ({ id, data }) => customerAPI.update(id, data),
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-      toast.success('Customer updated successfully!');
+      queryClient.invalidateQueries({ queryKey: ['sms-history'] });
+      queryClient.invalidateQueries({ queryKey: ['sms-stats'] });
+
+      const smsRes = res.data?.smsResult;
+      if (smsRes?.success) {
+        toast.success(`Customer updated & Thank You SMS sent to ${res.data?.data?.phone}!`);
+      } else if (smsRes?.error) {
+        toast.success('Customer updated successfully!');
+        toast.error(`SMS notification could not be sent: ${smsRes.error}`);
+      } else {
+        toast.success('Customer updated successfully!');
+      }
       closeModal();
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to update customer'),
@@ -358,12 +425,24 @@ const CustomersPage = () => {
   // Payment Mutation
   const paymentMutation = useMutation({
     mutationFn: ({ id, data }) => customerAPI.recordPayment(id, data),
-    onSuccess: () => {
+    onSuccess: (res) => {
       queryClient.invalidateQueries({ queryKey: ['customers'] });
       queryClient.invalidateQueries({ queryKey: ['dashboard-stats'] });
-      toast.success('Payment recorded!');
+      queryClient.invalidateQueries({ queryKey: ['sms-history'] });
+      queryClient.invalidateQueries({ queryKey: ['sms-stats'] });
+
+      const smsRes = res.data?.smsResult;
+      if (smsRes?.success) {
+        toast.success('Payment recorded & Thank You SMS sent!');
+      } else if (smsRes?.error) {
+        toast.success('Payment recorded!');
+        toast.error(`Thank You SMS could not be sent: ${smsRes.error}`);
+      } else {
+        toast.success('Payment recorded!');
+      }
       setShowPaymentModal(null);
       setPaymentForm({ amount: '', method: 'cash', note: '' });
+      setPaymentSendSms(true);
     },
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to record payment'),
   });
@@ -459,6 +538,16 @@ const CustomersPage = () => {
       billImages: [],
     });
     setPreviewSentHistory(null);
+  };
+
+  const openPaymentModal = (customer) => {
+    setShowPaymentModal(customer);
+    setPaymentForm({
+      amount: customer.totalDue ? String(customer.totalDue) : '',
+      method: 'cash',
+      note: '',
+    });
+    setPaymentSendSms(true);
   };
 
   // Handle Due input changes to keep SMS due in sync unless user customized it
@@ -606,8 +695,8 @@ const CustomersPage = () => {
       billShortCode: form.billShortCode,
       billDetailsText: form.billDetailsText ? form.billDetailsText.trim() : '',
       billImages: form.billImages,
-      sendSms: !editingCustomer && smsEnabled,
-      smsMessage: !editingCustomer && smsEnabled ? finalAddModalSmsText : undefined,
+      sendSms: smsEnabled && (!editingCustomer || (editingCustomer && isEditingDueZero)),
+      smsMessage: smsEnabled && (!editingCustomer || (editingCustomer && isEditingDueZero)) ? finalAddModalSmsText : undefined,
     };
 
     if (editingCustomer) {
@@ -620,9 +709,15 @@ const CustomersPage = () => {
   // Handle Record Payment Submit
   const handlePayment = (e) => {
     e.preventDefault();
+    const isClearingDue = parseFloat(paymentForm.amount) >= (showPaymentModal?.totalDue || 0);
     paymentMutation.mutate({
       id: showPaymentModal._id,
-      data: { ...paymentForm, amount: parseFloat(paymentForm.amount) },
+      data: {
+        ...paymentForm,
+        amount: parseFloat(paymentForm.amount),
+        sendSms: isClearingDue && paymentSendSms,
+        smsMessage: isClearingDue && paymentSendSms ? resolvedPaymentThankYouText : undefined,
+      },
     });
   };
 
@@ -680,11 +775,18 @@ const CustomersPage = () => {
           status: 'Delivered',
         });
       } else {
-        toast.success(`SMS reminder dispatched to ${standaloneSmsCustomer.name}!`);
+        toast.success(
+          isStandaloneDueCleared
+            ? `Thank You SMS dispatched to ${standaloneSmsCustomer.name}!`
+            : `SMS reminder dispatched to ${standaloneSmsCustomer.name}!`
+        );
         setStandaloneSmsCustomer(null);
       }
     } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to dispatch SMS reminder');
+      toast.error(
+        err.response?.data?.message ||
+          (isStandaloneDueCleared ? 'Failed to dispatch Thank You SMS' : 'Failed to dispatch SMS reminder')
+      );
     } finally {
       setIsSendingStandaloneSms(false);
     }
@@ -1065,58 +1167,71 @@ const CustomersPage = () => {
                           <ExternalLink size={13} />
                         </a>
 
-                        {/* Send SMS Reminder Button */}
-                        <button
-                          type="button"
-                          className="btn btn-ghost btn-sm"
-                          disabled={!isSmsCapable(c.phone)}
-                          title={
-                            isSmsCapable(c.phone)
-                              ? 'Send Due Reminder SMS'
-                              : 'International number — send this reminder over WhatsApp'
-                          }
-                          onClick={() => openStandaloneSmsModal(c)}
-                          style={{
-                            padding: '4px 8px',
-                            fontSize: '0.75rem',
-                            height: 28,
-                            color: 'var(--accent-secondary)',
-                            background: 'rgba(59, 130, 246, 0.08)',
-                            border: '1px solid rgba(59, 130, 246, 0.25)',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            fontWeight: 600,
-                            opacity: isSmsCapable(c.phone) ? 1 : 0.4,
-                            cursor: isSmsCapable(c.phone) ? 'pointer' : 'not-allowed',
-                          }}
-                        >
-                          <MessageSquare size={13} /> SMS
-                        </button>
+                        {/* Send SMS Reminder / Thank You Button */}
+                        {(() => {
+                          const isCleared = (c.totalDue !== undefined ? Number(c.totalDue) <= 0 : false);
+                          return (
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              disabled={!isSmsCapable(c.phone)}
+                              title={
+                                !isSmsCapable(c.phone)
+                                  ? 'International number — reach customer over WhatsApp'
+                                  : isCleared
+                                  ? 'Send Thank You SMS (Due Cleared)'
+                                  : 'Send Due Reminder SMS'
+                              }
+                              onClick={() => openStandaloneSmsModal(c)}
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: '0.75rem',
+                                height: 28,
+                                color: isCleared ? '#10b981' : 'var(--accent-secondary)',
+                                background: isCleared ? 'rgba(16, 185, 129, 0.08)' : 'rgba(59, 130, 246, 0.08)',
+                                border: isCleared ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(59, 130, 246, 0.25)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                fontWeight: 600,
+                                opacity: isSmsCapable(c.phone) ? 1 : 0.4,
+                                cursor: isSmsCapable(c.phone) ? 'pointer' : 'not-allowed',
+                              }}
+                            >
+                              {isCleared ? <CheckCircle size={13} /> : <MessageSquare size={13} />}
+                              {isCleared ? 'Thank You' : 'SMS'}
+                            </button>
+                          );
+                        })()}
 
-                        {/* Send WhatsApp Reminder Button */}
-                        <a
-                          href={getWhatsAppLink(c.phone, getCustomerReminderText(c))}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="btn btn-ghost btn-sm"
-                          title={`Send Due Reminder to ${c.name} via WhatsApp`}
-                          style={{
-                            padding: '4px 8px',
-                            fontSize: '0.75rem',
-                            height: 28,
-                            color: '#25D366',
-                            background: 'rgba(37, 211, 102, 0.08)',
-                            border: '1px solid rgba(37, 211, 102, 0.3)',
-                            display: 'inline-flex',
-                            alignItems: 'center',
-                            gap: 4,
-                            fontWeight: 600,
-                            textDecoration: 'none',
-                          }}
-                        >
-                          <MessageCircle size={13} /> WhatsApp
-                        </a>
+                        {/* Send WhatsApp Button */}
+                        {(() => {
+                          const isCleared = (c.totalDue !== undefined ? Number(c.totalDue) <= 0 : false);
+                          return (
+                            <a
+                              href={getWhatsAppLink(c.phone, getCustomerReminderText(c))}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="btn btn-ghost btn-sm"
+                              title={isCleared ? `Send Thank You to ${c.name} via WhatsApp` : `Send Due Reminder to ${c.name} via WhatsApp`}
+                              style={{
+                                padding: '4px 8px',
+                                fontSize: '0.75rem',
+                                height: 28,
+                                color: '#25D366',
+                                background: 'rgba(37, 211, 102, 0.08)',
+                                border: '1px solid rgba(37, 211, 102, 0.3)',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: 4,
+                                fontWeight: 600,
+                                textDecoration: 'none',
+                              }}
+                            >
+                              <MessageCircle size={13} /> WhatsApp
+                            </a>
+                          );
+                        })()}
 
                         {/* Edit Button */}
                         <button
@@ -1135,7 +1250,7 @@ const CustomersPage = () => {
                             type="button"
                             className="btn btn-primary btn-sm"
                             title="Record Payment"
-                            onClick={() => setShowPaymentModal(c)}
+                            onClick={() => openPaymentModal(c)}
                             style={{ padding: '4px 8px', fontSize: '0.75rem', height: 28 }}
                           >
                             <DollarSign size={13} /> Pay
@@ -1317,40 +1432,50 @@ const CustomersPage = () => {
 
                 {/* Mobile Actions */}
                 <div className="customer-card-actions">
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    disabled={!isSmsCapable(c.phone)}
-                    title={
-                      isSmsCapable(c.phone)
-                        ? 'Send Due Reminder SMS'
-                        : 'International number — send this reminder over WhatsApp'
-                    }
-                    onClick={() => openStandaloneSmsModal(c)}
-                    style={{
-                      color: 'var(--accent-secondary)',
-                      opacity: isSmsCapable(c.phone) ? 1 : 0.4,
-                      cursor: isSmsCapable(c.phone) ? 'pointer' : 'not-allowed',
-                    }}
-                  >
-                    <MessageSquare size={14} /> SMS
-                  </button>
-                  <a
-                    href={getWhatsAppLink(c.phone, getCustomerReminderText(c))}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn btn-ghost btn-sm"
-                    style={{
-                      color: '#25D366',
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 4,
-                      textDecoration: 'none',
-                    }}
-                    title={`Send Due Reminder to ${c.name} via WhatsApp`}
-                  >
-                    <MessageCircle size={14} /> WhatsApp
-                  </a>
+                  {(() => {
+                    const isCleared = (c.totalDue !== undefined ? Number(c.totalDue) <= 0 : false);
+                    return (
+                      <>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          disabled={!isSmsCapable(c.phone)}
+                          title={
+                            !isSmsCapable(c.phone)
+                              ? 'International number — send over WhatsApp'
+                              : isCleared
+                              ? 'Send Thank You SMS (Due Cleared)'
+                              : 'Send Due Reminder SMS'
+                          }
+                          onClick={() => openStandaloneSmsModal(c)}
+                          style={{
+                            color: isCleared ? '#10b981' : 'var(--accent-secondary)',
+                            opacity: isSmsCapable(c.phone) ? 1 : 0.4,
+                            cursor: isSmsCapable(c.phone) ? 'pointer' : 'not-allowed',
+                          }}
+                        >
+                          {isCleared ? <CheckCircle size={14} /> : <MessageSquare size={14} />}{' '}
+                          {isCleared ? 'Thank You' : 'SMS'}
+                        </button>
+                        <a
+                          href={getWhatsAppLink(c.phone, getCustomerReminderText(c))}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn btn-ghost btn-sm"
+                          style={{
+                            color: '#25D366',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4,
+                            textDecoration: 'none',
+                          }}
+                          title={isCleared ? `Send Thank You to ${c.name} via WhatsApp` : `Send Due Reminder to ${c.name} via WhatsApp`}
+                        >
+                          <MessageCircle size={14} /> WhatsApp
+                        </a>
+                      </>
+                    );
+                  })()}
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm"
@@ -1373,7 +1498,7 @@ const CustomersPage = () => {
                     <button
                       type="button"
                       className="btn btn-primary btn-sm customer-pay-btn"
-                      onClick={() => setShowPaymentModal(c)}
+                      onClick={() => openPaymentModal(c)}
                     >
                       <DollarSign size={15} /> Pay Due • ৳{(c.totalDue || 0).toLocaleString()}
                     </button>
@@ -1755,14 +1880,14 @@ const CustomersPage = () => {
                 </div>
 
                 {/* ========================================================
-                    DYNAMIC SMS DUE REMINDER SECTION (Only on Create Customer)
+                    DYNAMIC SMS DUE REMINDER / THANK YOU SECTION
                    ======================================================== */}
-                {!editingCustomer && (
+                {(!editingCustomer || (editingCustomer && isEditingDueZero)) && (
                   <div
                     style={{
                       marginTop: 'var(--space-sm)',
-                      background: 'rgba(255, 255, 255, 0.02)',
-                      border: '1px solid var(--border)',
+                      background: isEditingDueZero && editingCustomer ? 'rgba(16, 185, 129, 0.05)' : 'rgba(255, 255, 255, 0.02)',
+                      border: isEditingDueZero && editingCustomer ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid var(--border)',
                       borderRadius: 'var(--radius-md)',
                       padding: 'var(--space-md)',
                       display: 'flex',
@@ -1778,21 +1903,39 @@ const CustomersPage = () => {
                             width: 28,
                             height: 28,
                             borderRadius: 6,
-                            background: smsEnabled ? 'rgba(59, 130, 246, 0.15)' : 'rgba(255,255,255,0.05)',
+                            background: smsEnabled
+                              ? isEditingDueZero && editingCustomer
+                                ? 'rgba(16, 185, 129, 0.2)'
+                                : 'rgba(59, 130, 246, 0.15)'
+                              : 'rgba(255,255,255,0.05)',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            color: smsEnabled ? 'var(--accent-secondary)' : 'var(--text-tertiary)',
+                            color: smsEnabled
+                              ? isEditingDueZero && editingCustomer
+                                ? '#10b981'
+                                : 'var(--accent-secondary)'
+                              : 'var(--text-tertiary)',
                           }}
                         >
-                          <MessageSquare size={16} />
+                          {isEditingDueZero && editingCustomer ? <CheckCircle size={16} /> : <MessageSquare size={16} />}
                         </div>
                         <div>
-                          <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)' }}>
-                            Send Due Reminder SMS
+                          <div
+                            style={{
+                              fontWeight: 600,
+                              fontSize: '0.875rem',
+                              color: isEditingDueZero && editingCustomer ? '#10b981' : 'var(--text-primary)',
+                            }}
+                          >
+                            {isEditingDueZero && editingCustomer
+                              ? 'Send "Thank You for Clearing Due" SMS'
+                              : 'Send Due Reminder SMS'}
                           </div>
                           <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)' }}>
-                            Includes unique customer bill link automatically
+                            {isEditingDueZero && editingCustomer
+                              ? 'Due balance is 0. Send a polite thank-you message to customer.'
+                              : 'Includes unique customer bill link automatically'}
                           </div>
                         </div>
                       </div>
@@ -1804,8 +1947,20 @@ const CustomersPage = () => {
                           onChange={(e) => setSmsEnabled(e.target.checked)}
                           style={{ width: 16, height: 16, cursor: 'pointer' }}
                         />
-                        <span style={{ fontSize: '0.75rem', fontWeight: 600, color: smsEnabled ? 'var(--accent-secondary)' : 'var(--text-tertiary)' }}>
-                          {smsEnabled ? 'Enabled' : 'Skip SMS'}
+                        <span
+                          style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 600,
+                            color: smsEnabled
+                              ? isEditingDueZero && editingCustomer
+                                ? '#10b981'
+                                : 'var(--accent-secondary)'
+                              : 'var(--text-tertiary)',
+                          }}
+                        >
+                          {isEditingDueZero && editingCustomer
+                            ? (smsEnabled ? 'Send Thank You SMS' : 'Skip SMS')
+                            : (smsEnabled ? 'Enabled' : 'Skip SMS')}
                         </span>
                       </label>
                     </div>
@@ -2122,7 +2277,9 @@ const CustomersPage = () => {
                   >
                     {(createMutation.isPending || updateMutation.isPending) && <div className="spinner" />}
                     {editingCustomer
-                      ? 'Update Customer'
+                      ? smsEnabled && isEditingDueZero
+                        ? 'Update & Send Thank You SMS'
+                        : 'Update Customer'
                       : smsEnabled
                       ? 'Save Customer & Send SMS'
                       : 'Save Customer'}
@@ -2142,9 +2299,23 @@ const CustomersPage = () => {
           <div className="modal" style={{ maxWidth: 580 }}>
             <div className="modal-header">
               <div>
-                <h2 className="modal-title">Send Due Reminder SMS</h2>
+                <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {isStandaloneDueCleared ? (
+                    <>
+                      <CheckCircle size={20} color="var(--success)" />
+                      Send Thank You SMS (Due Cleared)
+                    </>
+                  ) : (
+                    'Send Due Reminder SMS'
+                  )}
+                </h2>
                 <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
                   Recipient: <strong>{standaloneSmsCustomer.name}</strong> ({standaloneSmsCustomer.phone})
+                  {isStandaloneDueCleared && (
+                    <span style={{ marginLeft: 8, color: 'var(--success)', fontWeight: 600 }}>
+                      • Due Balance: ৳0
+                    </span>
+                  )}
                 </p>
               </div>
               <button
@@ -2170,7 +2341,7 @@ const CustomersPage = () => {
               >
                 <div>
                   <label style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', display: 'block', marginBottom: 2 }}>
-                    Outstanding Due (BDT)
+                    {isStandaloneDueCleared ? 'Due Balance (BDT)' : 'Outstanding Due (BDT)'}
                   </label>
                   <input
                     className="form-input"
@@ -2393,17 +2564,17 @@ const CustomersPage = () => {
                   }}
                   title="Open directly in WhatsApp with this exact message pre-typed"
                 >
-                  <MessageCircle size={15} /> Send via WhatsApp
+                  <MessageCircle size={15} /> {isStandaloneDueCleared ? 'WhatsApp Thank You' : 'Send via WhatsApp'}
                 </a>
                 <button
                   type="button"
-                  className="btn btn-primary"
+                  className={`btn ${isStandaloneDueCleared ? 'btn-success' : 'btn-primary'}`}
                   disabled={isSendingStandaloneSms}
                   onClick={() => handleSendStandaloneSms(false)}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                 >
-                  {isSendingStandaloneSms ? <div className="spinner" /> : <Send size={15} />}
-                  Send Reminder SMS Now
+                  {isSendingStandaloneSms ? <div className="spinner" /> : isStandaloneDueCleared ? <CheckCircle size={15} /> : <Send size={15} />}
+                  {isStandaloneDueCleared ? 'Send Thank You SMS Now' : 'Send Reminder SMS Now'}
                 </button>
               </div>
             </div>
@@ -2522,7 +2693,7 @@ const CustomersPage = () => {
                         </span>
                       </div>
                       <span style={{ fontSize: '0.6875rem', color: 'var(--accent-secondary)', marginLeft: 20 }}>
-                        Currently checked rows
+                        Checked rows (৳0 skipped)
                       </span>
                     </label>
                   )}
@@ -2553,10 +2724,30 @@ const CustomersPage = () => {
                       </span>
                     </div>
                     <span style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginLeft: 20 }}>
-                      Everyone in database
+                      All active due (৳0 skipped)
                     </span>
                   </label>
                 </div>
+              </div>
+
+              {/* Zero-Due Protection Info Callout */}
+              <div
+                style={{
+                  background: 'rgba(16, 185, 129, 0.08)',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  borderRadius: 'var(--radius-sm)',
+                  padding: '8px 12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  fontSize: '0.75rem',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                <CheckCircle size={15} color="#10b981" style={{ flexShrink: 0 }} />
+                <span>
+                  <strong>Zero-Due Protection Active:</strong> Customers with ৳0 or cleared dues are strictly excluded from reminder broadcasts.
+                </span>
               </div>
 
               {/* Template Mode Selection */}
@@ -2873,14 +3064,103 @@ const CustomersPage = () => {
                     onChange={(e) => setPaymentForm({ ...paymentForm, note: e.target.value })}
                   />
                 </div>
+
+                {/* Due Cleared & Thank You SMS Section */}
+                {(() => {
+                  const currentStandingDue = showPaymentModal.totalDue || 0;
+                  const payAmount = parseFloat(paymentForm.amount) || 0;
+                  const isClearingDue = payAmount >= currentStandingDue && currentStandingDue > 0;
+                  if (!isClearingDue) return null;
+
+                  return (
+                    <div
+                      style={{
+                        background: 'rgba(16, 185, 129, 0.08)',
+                        border: '1px solid rgba(16, 185, 129, 0.25)',
+                        borderRadius: 'var(--radius-sm)',
+                        padding: '10px 12px',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: 8,
+                        marginTop: 4,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--success)', fontWeight: 600, fontSize: '0.8125rem' }}>
+                        <CheckCircle size={15} /> Due will be completely cleared (৳0)!
+                      </div>
+                      <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
+                        You can send an automated &quot;Thank You for clearing your due&quot; SMS notification to {showPaymentModal.name}.
+                      </p>
+
+                      {isSmsCapable(showPaymentModal.phone) ? (
+                        <>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', margin: 0 }}>
+                            <input
+                              type="checkbox"
+                              checked={paymentSendSms}
+                              onChange={(e) => setPaymentSendSms(e.target.checked)}
+                              style={{ cursor: 'pointer', width: 16, height: 16 }}
+                            />
+                            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                              Send &quot;Thank You for clearing due&quot; SMS to {showPaymentModal.name}
+                            </span>
+                          </label>
+
+                          {paymentSendSms && (
+                            <div style={{ marginTop: 2 }}>
+                              <div
+                                style={{
+                                  background: '#0d1117',
+                                  border: '1px solid rgba(255,255,255,0.08)',
+                                  borderRadius: 'var(--radius-sm)',
+                                  padding: '8px 10px',
+                                  fontFamily: 'monospace',
+                                  fontSize: '0.75rem',
+                                  lineHeight: 1.4,
+                                  color: '#c9d1d9',
+                                  whiteSpace: 'pre-wrap',
+                                }}
+                              >
+                                {resolvedPaymentThankYouText}
+                              </div>
+                              <div style={{ fontSize: '0.6875rem', color: 'var(--text-tertiary)', marginTop: 4 }}>
+                                {paymentSmsMetrics.charCount} chars • {paymentSmsMetrics.credits} SMS credit ({paymentSmsMetrics.isUnicode ? 'Unicode' : 'GSM'})
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <div style={{ fontSize: '0.75rem', color: 'var(--warning)' }}>
+                          Customer has an international phone number. You can send a Thank You message via WhatsApp from their profile instead.
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowPaymentModal(null)}>
                   Cancel
                 </button>
-                <button type="submit" className="btn btn-primary" disabled={paymentMutation.isPending}>
+                <button
+                  type="submit"
+                  className={`btn ${
+                    (parseFloat(paymentForm.amount) || 0) >= (showPaymentModal.totalDue || 0) &&
+                    (showPaymentModal.totalDue || 0) > 0 &&
+                    paymentSendSms &&
+                    isSmsCapable(showPaymentModal.phone)
+                      ? 'btn-success'
+                      : 'btn-primary'
+                  }`}
+                  disabled={paymentMutation.isPending}
+                >
                   {paymentMutation.isPending && <div className="spinner" />}
-                  Record Payment
+                  {(parseFloat(paymentForm.amount) || 0) >= (showPaymentModal.totalDue || 0) &&
+                  (showPaymentModal.totalDue || 0) > 0 &&
+                  paymentSendSms &&
+                  isSmsCapable(showPaymentModal.phone)
+                    ? 'Record & Send Thank You SMS'
+                    : 'Record Payment'}
                 </button>
               </div>
             </form>

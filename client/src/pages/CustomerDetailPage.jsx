@@ -63,6 +63,18 @@ Total Due: BDT {due}
 Bill: {billUrl}
 WhatsApp: {whatsappNumber}`;
 
+// Standard Thank You for Clearing Due Template
+const DEFAULT_THANK_YOU_TEMPLATE = `Dear {name},
+Thank you for clearing your due with chapaimango.bd! Your payment has been received and your due balance is now BDT 0.
+
+For your bill summary, visit: {billUrl}
+For any support, WhatsApp us at {whatsappNumber}
+
+-Chapai Mango Team`;
+
+// Ultra-Compact 1-SMS Thank You Template
+const COMPACT_THANK_YOU_TEMPLATE = `chapaimango.bd: Dear {name}, thank you for clearing your due! Current due balance: BDT 0. Bill: {billUrl}`;
+
 const calculateSmsMetrics = (text) => {
   if (!text) return { charCount: 0, credits: 0, isUnicode: false };
   const clean = cleanSmsText(text);
@@ -120,18 +132,25 @@ const CustomerDetailPage = () => {
     onError: (err) => toast.error(err.response?.data?.message || 'Failed to delete customer'),
   });
 
+  const isDueCleared = (customer?.totalDue !== undefined ? Number(customer.totalDue) <= 0 : false);
+
   // Dynamic message resolver
   const resolvedSmsText = useMemo(() => {
     if (smsForm.directEdit) return cleanSmsText(smsForm.customText);
     const dueVal = smsForm.due || (customer?.totalDue ? Number(customer.totalDue).toLocaleString('en-BD') : '0');
-    const activeTemplate = smsTemplateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
+    let activeTemplate;
+    if (isDueCleared) {
+      activeTemplate = smsTemplateType === 'compact' ? COMPACT_THANK_YOU_TEMPLATE : DEFAULT_THANK_YOU_TEMPLATE;
+    } else {
+      activeTemplate = smsTemplateType === 'compact' ? COMPACT_REMINDER_TEMPLATE : DEFAULT_REMINDER_TEMPLATE;
+    }
     const resolved = activeTemplate
       .replace(/\{name\}/g, (customer?.name || '').trim() || 'Customer')
       .replace(/\{(?:due|totalDue)\}/g, dueVal)
       .replace(/\{billUrl\}/g, smsForm.billUrl || 'xxxxxxxxxx')
       .replace(/\{whatsappNumber\}/g, smsForm.whatsappNumber || '01717333880');
     return cleanSmsText(resolved);
-  }, [smsForm, customer, smsTemplateType]);
+  }, [smsForm, customer, smsTemplateType, isDueCleared]);
 
   const smsMetrics = useMemo(() => calculateSmsMetrics(resolvedSmsText), [resolvedSmsText]);
 
@@ -169,7 +188,11 @@ const CustomerDetailPage = () => {
           time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         });
       } else {
-        toast.success(`SMS reminder dispatched to ${customer.name}!`);
+        toast.success(
+          isDueCleared
+            ? `Thank You SMS dispatched to ${customer.name}!`
+            : `SMS reminder dispatched to ${customer.name}!`
+        );
         setShowSmsModal(false);
       }
     } catch (err) {
@@ -267,12 +290,14 @@ const CustomerDetailPage = () => {
               display: 'inline-flex',
               alignItems: 'center',
               gap: 6,
-              color: 'var(--accent-secondary)',
-              borderColor: 'rgba(59, 130, 246, 0.3)',
+              color: isDueCleared ? '#10b981' : 'var(--accent-secondary)',
+              borderColor: isDueCleared ? 'rgba(16, 185, 129, 0.35)' : 'rgba(59, 130, 246, 0.3)',
+              background: isDueCleared ? 'rgba(16, 185, 129, 0.08)' : undefined,
               fontWeight: 600,
             }}
           >
-            <MessageSquare size={16} /> Send SMS Reminder
+            {isDueCleared ? <CheckCircle size={16} /> : <MessageSquare size={16} />}
+            {isDueCleared ? 'Send Thank You SMS' : 'Send SMS Reminder'}
           </button>
 
           <a
@@ -290,9 +315,9 @@ const CustomerDetailPage = () => {
               fontWeight: 600,
               textDecoration: 'none',
             }}
-            title="Send Due Reminder via WhatsApp"
+            title={isDueCleared ? 'Send Thank You via WhatsApp' : 'Send Due Reminder via WhatsApp'}
           >
-            <MessageCircle size={16} /> WhatsApp Reminder
+            <MessageCircle size={16} /> {isDueCleared ? 'WhatsApp Thank You' : 'WhatsApp Reminder'}
           </a>
 
           <button
@@ -561,9 +586,16 @@ const CustomerDetailPage = () => {
           <div className="modal" style={{ maxWidth: 580 }}>
             <div className="modal-header">
               <div>
-                <h2 className="modal-title">Send Due Reminder SMS</h2>
+                <h2 className="modal-title">
+                  {isDueCleared ? 'Send Thank You SMS (Due Cleared)' : 'Send Due Reminder SMS'}
+                </h2>
                 <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', margin: 0 }}>
                   Recipient: <strong>{customer.name}</strong> ({customer.phone})
+                  {isDueCleared && (
+                    <span style={{ marginLeft: 6, color: '#10b981', fontWeight: 600 }}>
+                      • All dues cleared (৳0)
+                    </span>
+                  )}
                 </p>
               </div>
               <button className="btn btn-ghost btn-icon btn-sm" onClick={() => setShowSmsModal(false)}>
@@ -815,7 +847,7 @@ const CustomerDetailPage = () => {
                   style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
                 >
                   {isSendingSms ? <div className="spinner" /> : <Send size={15} />}
-                  Send Reminder SMS Now
+                  {isDueCleared ? 'Send Thank You SMS Now' : 'Send Reminder SMS Now'}
                 </button>
               </div>
             </div>
